@@ -1,13 +1,25 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminTracks() {
   const [events, setEvents] = useState([]);
   const [tracks, setTracks] = useState([]);
   const [eventId, setEventId] = useState('');
   const [form, setForm] = useState({ name: '', description: '', color: '#3B82F6' });
+  const { activeEvent } = useActiveEvent();
 
-  useEffect(() => { api.get('/events').then(r => { setEvents(r.data); if (r.data.length) setEventId(r.data[0].id); }); }, []);
+  useEffect(() => { 
+    api.get('/events').then(r => { 
+      setEvents(r.data); 
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length && !eventId) {
+        setEventId(r.data[0].id);
+      }
+    }); 
+  }, [activeEvent]);
+
   useEffect(() => { if (eventId) api.get(`/events/${eventId}/tracks`).then(r => setTracks(r.data)); }, [eventId]);
 
   const handleCreate = async (e) => {

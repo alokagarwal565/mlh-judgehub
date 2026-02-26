@@ -11,6 +11,10 @@ export default function JudgeDashboard({ isAdminView }) {
   const [eventId, setEventId] = useState('');
   const [sets, setSets] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [selectedSet, setSelectedSet] = useState(null);
+  const [requestReason, setRequestReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const socket = useSocket();
 
@@ -41,9 +45,11 @@ export default function JudgeDashboard({ isAdminView }) {
       // Refresh if it's for this judge (or if we're in admin view)
       loadSets();
     });
+    socket.on('edit-request:statusChanged', handleUpdate);
     return () => {
       socket.off('event:statusChanged', handleUpdate);
       socket.off('assignment:new');
+      socket.off('edit-request:statusChanged', handleUpdate);
     };
   }, [socket, loadSets]);
 
@@ -60,6 +66,23 @@ export default function JudgeDashboard({ isAdminView }) {
       toastError(err.response?.data?.error || 'Failed to request a set');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRequestEdit = async (e) => {
+    e.preventDefault();
+    if (!requestReason.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await api.post('/edit-requests/request', { setId: selectedSet.id, reason: requestReason });
+      setEditModal(false);
+      setRequestReason('');
+      info('Request submitted to administrators', 'Success');
+      loadSets();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to submit request');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -195,30 +218,160 @@ export default function JudgeDashboard({ isAdminView }) {
                     </span>
                   ))}
                 </div>
-                <button
-                  className="btn btn-ghost btn-sm mt-4"
-                  disabled={!isAdminView && !canEdit}
-                  title={isAdminView ? 'Viewing evaluated scores' : canEdit ? 'Reopen this set to edit scores' : 'Complete your active set first'}
-                  onClick={async () => {
-                    if (isAdminView) {
-                      navigate(`/admin/view-judge/${viewAsJudgeId}/score/${set.id}`);
-                      return;
-                    }
-                    try {
-                      await api.post(`/events/${eventId}/sets/${set.id}/reopen`);
-                      loadSets();
-                      navigate(`/judge/score/${set.id}`);
-                    } catch (err) {
-                      toastError(err.response?.data?.error || 'Failed to reopen');
-                    }
-                  }}
-                >
-                  {isAdminView ? '👀 View Scores' : '✏️ Edit Scores'}
-                </button>
-                {!canEdit && <div className="text-sm text-muted" style={{marginTop:4,fontSize:11}}>Complete your active set to unlock editing</div>}
+                {(() => {
+                  const latestRequest = set.editRequests?.[0];
+                  const hasApprovedRequest = latestRequest?.status === 'APPROVED';
+                  const hasPendingRequest = latestRequest?.status === 'PENDING';
+                  const hasDeniedRequest = latestRequest?.status === 'DENIED';
+                  
+                  if (canEdit || hasApprovedRequest) {
+                    const isBlockedByOtherSet = !canEdit && hasApprovedRequest;
+                    return (
+                      <button
+                        className="btn btn-ghost btn-sm mt-4"
+                        title={isBlockedByOtherSet ? "Complete your active set before editing this one" : "Reopen this set to edit scores"}
+                        disabled={isBlockedByOtherSet}
+                        style={isBlockedByOtherSet ? {opacity:0.6, cursor:'not-allowed'} : {}}
+                        onClick={async () => {
+                          if (isAdminView) {
+                            navigate(`/admin/view-judge/${viewAsJudgeId}/score/${set.id}`);
+                            return;
+                          }
+                          try {
+                            await api.post(`/events/${eventId}/sets/${set.id}/reopen`);
+                            loadSets();
+                            navigate(`/judge/score/${set.id}`);
+                          } catch (err) {
+                            toastError(err.response?.data?.error || 'Failed to reopen');
+                          }
+                        }}
+                      >
+                        ✏️ Edit Scores
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <div className="flex flex-col gap-2">
+                       <div className="flex gap-2">
+                        <button
+                          className="btn btn-ghost btn-sm mt-4"
+                          title={isAdminView ? 'Viewing evaluated scores' : 'Viewing of scores is allowed in read-only mode'}
+                          onClick={() => {
+                            if (isAdminView) {
+                              navigate(`/admin/view-judge/${viewAsJudgeId}/score/${set.id}`);
+                            } else {
+                              navigate(`/judge/view/${set.id}`);
+                            }
+                          }}
+                        >
+                          👀 View Scores
+                        </button>
+                        {!isAdminView && !hasPendingRequest && (
+                          <button
+                            className="btn btn-primary btn-sm mt-4"
+                            style={{fontSize:11}}
+                            onClick={() => { setSelectedSet(set); setEditModal(true); }}
+                          >
+                            📩 Request Edit
+                          </button>
+                        )}
+                        {hasPendingRequest && (
+                          <button className="btn btn-ghost btn-sm mt-4" disabled style={{opacity:0.6}}>
+                            ⏳ Request Pending...
+                          </button>
+                        )}
+                      </div>
+                      
+                      {!canEdit && !isAdminView && !hasApprovedRequest && !hasPendingRequest && (
+                        <div className="text-sm text-muted" style={{marginTop:8,fontSize:11,display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{opacity:0.6}}>🔒</span> Editing of scores are not allowed
+                        </div>
+                      )}
+
+                      {hasDeniedRequest && (
+                        <div className="text-sm" style={{
+                          marginTop:12,
+                          fontSize:11,
+                          color:'var(--danger)',
+                          background:'var(--danger-bg)',
+                          padding:'8px 12px',
+                          borderRadius:8,
+                          border:'1px solid rgba(239, 68, 68, 0.2)',
+                          display:'flex',
+                          flexDirection:'column',
+                          gap:4
+                        }}>
+                          <div style={{fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
+                            <span>❌</span> Request Denied
+                          </div>
+                          <div style={{opacity:0.9}}>Reason: {latestRequest.reason || 'No reason provided'}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {editModal && (
+        <div className="modal-overlay" style={{backdropFilter:'blur(8px)'}}>
+          <div className="modal-content" style={{maxWidth:440, padding:0, overflow:'hidden', border:'1px solid var(--border-light)', boxShadow:'var(--shadow-lg)'}}>
+            <div style={{background:'var(--gradient-primary)', padding:'24px 30px', color:'#fff'}}>
+              <h2 style={{margin:0, fontSize:20, display:'flex', alignItems:'center', gap:12}}>
+                <span>📩</span> Request Edit Access
+              </h2>
+              <p style={{margin:'8px 0 0', fontSize:13, opacity:0.9, fontWeight:400}}>For Set <strong>{selectedSet?.column}</strong> · Team Range {getSetRange(selectedSet?.projects)}</p>
+            </div>
+            
+            <form onSubmit={handleRequestEdit} style={{padding:'30px'}}>
+              <label className="form-label" style={{marginBottom:10, fontSize:13, display:'block'}}>Reason for Edit Request <span style={{color:'var(--danger)'}}>*</span></label>
+              <textarea
+                className="form-textarea mb-6"
+                placeholder="Ex: Need to correct a scoring mistake for the technical implementation criteria..."
+                value={requestReason}
+                onChange={e => setRequestReason(e.target.value)}
+                required
+                autoFocus
+                style={{
+                  minHeight:120,
+                  fontSize:14,
+                  lineHeight:1.6,
+                  background:'rgba(255,255,255,0.03)',
+                  border:'1px solid var(--border-color)',
+                  borderRadius:12,
+                  padding:14,
+                  width:'100%',
+                  color:'var(--text-primary)',
+                  transition:'all 0.2s',
+                  display:'block'
+                }}
+              />
+              
+              <div className="flex items-center gap-3 justify-end" style={{marginTop:24}}>
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  onClick={() => setEditModal(false)} 
+                  disabled={isSubmitting}
+                  style={{padding:'10px 20px', borderRadius:10}}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  disabled={isSubmitting || !requestReason.trim()}
+                  style={{padding:'10px 28px', borderRadius:10, minWidth:140}}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Send Request'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

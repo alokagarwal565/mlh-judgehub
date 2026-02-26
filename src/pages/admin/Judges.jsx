@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminJudges() {
   const { success, error: toastError } = useToast();
@@ -11,7 +12,9 @@ export default function AdminJudges() {
   const [activityFilter, setActivityFilter] = useState('ALL');
   const [showModal, setShowModal] = useState(false);
   const [editingJudge, setEditingJudge] = useState(null);
+  const [deletingJudge, setDeletingJudge] = useState(null); // null | id
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '' });
+  const { activeEvent } = useActiveEvent();
 
   const fetchJudges = () => {
     if (eventId) api.get(`/events/${eventId}/judges`).then(r => setJudges(r.data)).catch(() => {});
@@ -20,9 +23,13 @@ export default function AdminJudges() {
   useEffect(() => { 
     api.get('/events').then(r => { 
       setEvents(r.data); 
-      if (r.data.length && !eventId) setEventId(r.data[0].id); 
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length && !eventId) {
+        setEventId(r.data[0].id);
+      }
     }); 
-  }, []);
+  }, [activeEvent]);
 
   useEffect(() => { fetchJudges(); }, [eventId]);
 
@@ -72,14 +79,20 @@ export default function AdminJudges() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this judge? This will also remove their assignments from this event.')) return;
+  const confirmDelete = async () => {
+    if (!deletingJudge) return;
     try {
-      await api.delete(`/events/${eventId}/judges/${id}`);
+      await api.delete(`/events/${eventId}/judges/${deletingJudge}`);
+      success('Judge and associated data removed');
+      setDeletingJudge(null);
       fetchJudges();
     } catch (err) {
       toastError('Failed to delete judge');
     }
+  };
+
+  const handleDelete = (id) => {
+    setDeletingJudge(id);
   };
 
   return (
@@ -87,14 +100,17 @@ export default function AdminJudges() {
       <div className="page-header">
         <h1>Judges</h1>
         <div className="flex gap-2">
-          <input 
-            type="text" 
-            placeholder="Search name, email, phone..." 
-            className="form-input" 
-            style={{width:250}}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <div style={{position:'relative', width:250}}>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+            <input 
+              type="text" 
+              placeholder="Search name, email, phone..." 
+              className="form-input" 
+              style={{width:'100%', paddingLeft:32}}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
           <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Judge</button>
           <span className="badge badge-info">{filteredJudges.length} judges</span>
         </div>
@@ -192,6 +208,32 @@ export default function AdminJudges() {
                 <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirm Modal ──────────────────────────── */}
+      {deletingJudge && (
+        <div className="modal-overlay" onClick={() => setDeletingJudge(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
+            <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
+            <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
+              <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
+              <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Judge?</h2>
+              <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
+                You're about to delete <strong style={{color: 'var(--text-primary)'}}>{judges.find(j => j.id === deletingJudge)?.name}</strong>.
+                <br/><br/>
+                All associated <strong>assignments</strong>, <strong>scores</strong>, and <strong>feedback</strong> in this event will be permanently removed.
+                <br/><br/>
+                This action <strong>cannot be undone</strong>.
+              </p>
+            </div>
+            <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
+              <button className="btn btn-ghost" onClick={() => setDeletingJudge(null)} style={{flex: 1}}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDelete} style={{flex: 1}}>
+                🗑 Delete Judge
+              </button>
+            </div>
           </div>
         </div>
       )}

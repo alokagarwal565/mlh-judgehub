@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminAssignments() {
   const { error: toastError, success } = useToast();
@@ -18,6 +19,7 @@ export default function AdminAssignments() {
   const [selectedSet, setSelectedSet] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const navigate = useNavigate();
+  const { activeEvent } = useActiveEvent();
 
   const filterSet = (set) => {
     const q = search.toLowerCase().trim();
@@ -32,7 +34,16 @@ export default function AdminAssignments() {
     });
   };
 
-  useEffect(() => { api.get('/events').then(r => { setEvents(r.data); if (r.data.length) setEventId(r.data[0].id); }); }, []);
+  useEffect(() => { 
+    api.get('/events').then(r => { 
+      setEvents(r.data); 
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length) {
+        setEventId(r.data[0].id);
+      }
+    }); 
+  }, [activeEvent]);
 
   const currentEvent = events.find(e => e.id === eventId);
   const isJudging = currentEvent?.status === 'JUDGING';
@@ -185,9 +196,20 @@ export default function AdminAssignments() {
                     transition: 'all 0.15s'
                   }}
                 >
-                  <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  <div style={{display:'flex', alignItems:'center', gap:8, position:'relative'}} className="judge-hover-trigger">
                     <span style={{width:8, height:8, borderRadius:'50%', background: j.isIdle ? 'var(--success)' : 'var(--warning)', flexShrink:0}} />
                     <span style={{fontSize:13, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{j.name}</span>
+                    <div className="judge-tooltip">
+                      <div style={{fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 4, paddingBottom: 2, fontSize: 10, textTransform: 'uppercase', color: 'var(--accent)'}}>
+                        Judge Info
+                      </div>
+                      <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
+                        <span>📞</span> {j.phone || 'No phone'}
+                      </div>
+                      <div style={{display:'flex', alignItems:'center', gap:6}}>
+                        <span>📍</span> {j.recentLocation ? `Last: ${j.recentLocation}` : 'No history'}
+                      </div>
+                    </div>
                   </div>
                   <div style={{fontSize:11, color:'var(--text-muted)', marginLeft:16}}>
                     {j.isIdle ? 'Idle' : 'Busy'} · {j.completedSets} done of {j.totalSets}
@@ -297,7 +319,51 @@ export default function AdminAssignments() {
       {sets.length === 0 ? (
         <div className="empty-state"><div className="empty-state-icon">🔗</div><h3>No Sets Yet</h3><p>Import teams/judges first, then generate sets</p></div>
       ) : (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, alignItems:'start'}}>
+        <>
+          {/* ── Tie Breaker Section ─────────────────────────── */}
+          {sets.some(s => s.setNumber === 0) && (
+            <div className="card" style={{marginBottom: 24, border: '1px solid var(--warning)', background: 'rgba(var(--warning-rgb), 0.05)'}}>
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
+                <h3 style={{fontSize: 16, display:'flex', alignItems:'center', gap:8}}>
+                  🏆 Tie Breaker sets (Set #0)
+                </h3>
+                <span className="badge badge-warning">Action Required</span>
+              </div>
+              <div style={{display:'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12}}>
+                {sets.filter(s => s.setNumber === 0).map(set => (
+                  <div key={set.id} className="card" style={{padding: 12, background: 'var(--bg-secondary)', borderLeft: `4px solid ${set.status === 'COMPLETED' ? 'var(--success)' : set.status === 'IN_PROGRESS' ? 'var(--warning)' : 'var(--danger)'}`}}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div style={{fontWeight: 700, fontSize: 13}}>
+                        Tie Breaker @ Pos {set.baseRank || '?'}
+                      </div>
+                      <span className={`badge ${set.status === 'COMPLETED' ? 'badge-success' : set.status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-danger'}`} style={{fontSize: 9}}>
+                        {set.status === 'UNASSIGNED' ? 'PENDING' : set.status}
+                      </span>
+                    </div>
+                    {set.judge ? (
+                      <div className="text-xs text-muted mb-2">👨‍⚖️ {set.judge.name}</div>
+                    ) : (
+                      <div className="text-xs text-danger mb-2">⚠️ No judge assigned</div>
+                    )}
+                    <div className="text-xs text-muted" style={{lineHeight: 1.4}}>
+                      {set.projects.map(sp => sp.project.team?.name || sp.project.title).join(' · ')}
+                    </div>
+                    {set.status !== 'COMPLETED' && (
+                      <button className="btn btn-ghost btn-sm btn-block mt-2" onClick={() => {
+                        setSelectedSet(set);
+                        loadIdleJudges();
+                        setShowAssignPanel(true);
+                      }}>
+                        Assign Judge
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, alignItems:'start'}}>
           {columns.map(col => {
             const colSets = sets.filter(s => s.column === col).sort((a, b) => a.setNumber - b.setNumber);
             const filteredSets = colSets.filter(filterSet);
@@ -357,8 +423,29 @@ export default function AdminAssignments() {
                         </div>
                       </div>
                       {set.judge && (
-                        <div className="text-sm text-muted" style={{marginBottom:6}}>
+                        <div 
+                          className="text-sm text-muted judge-hover-trigger" 
+                          style={{
+                            marginBottom: 6, 
+                            cursor: 'help', 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: 4,
+                            position: 'relative'
+                          }}
+                        >
                           👨‍⚖️ {set.judge.name}
+                          <div className="judge-tooltip">
+                            <div style={{fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 4, paddingBottom: 2, fontSize: 10, textTransform: 'uppercase', color: 'var(--accent)'}}>
+                              Judge Info
+                            </div>
+                            <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
+                              <span>📞</span> {set.judge.phone || 'No phone'}
+                            </div>
+                            <div style={{display:'flex', alignItems:'center', gap:6}}>
+                              <span>📍</span> {set.recentLocation || 'No location'}
+                            </div>
+                          </div>
                         </div>
                       )}
                       <div style={{fontSize:11, color:'var(--text-muted)', lineHeight:1.6}}>
@@ -368,9 +455,9 @@ export default function AdminAssignments() {
                           return num ? `${name} (${num})` : name;
                         }).join(' · ')}
                       </div>
-                      {(set.status === 'COMPLETED' || set.status === 'IN_PROGRESS') && (
-                        <button className="btn btn-ghost btn-sm mt-2" onClick={() => handleEditSet(set)}>
-                          ✏️ View / Edit
+                      {(set.status === 'COMPLETED' || set.status === 'IN_PROGRESS') && set.judgeId && (
+                        <button className="btn btn-ghost btn-sm mt-2" onClick={() => navigate(`/admin/view-judge/${set.judgeId}/score/${set.id}`)}>
+                          👁 View
                         </button>
                       )}
                     </div>
@@ -380,7 +467,8 @@ export default function AdminAssignments() {
             );
           })}
         </div>
-      )}
-    </div>
-  );
+      </>
+    )}
+  </div>
+);
 }

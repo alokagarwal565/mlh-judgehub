@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import api from '../../services/api';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminProgress() {
   const [events, setEvents] = useState([]);
@@ -10,8 +11,19 @@ export default function AdminProgress() {
   const [search, setSearch] = useState('');
   const [activityFilter, setActivityFilter] = useState('ALL');
   const socket = useSocket();
+  const { activeEvent } = useActiveEvent();
 
-  useEffect(() => { api.get('/events').then(r => { setEvents(r.data); if (r.data.length) setEventId(r.data[0].id); }); }, []);
+  useEffect(() => { 
+    api.get('/events').then(r => { 
+      setEvents(r.data); 
+      // Default to active event if available, else first event
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length) {
+        setEventId(r.data[0].id);
+      }
+    }); 
+  }, [activeEvent]);
 
   useEffect(() => {
     if (!eventId) return;

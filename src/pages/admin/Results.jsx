@@ -3,6 +3,9 @@ import api from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
 
+import { useActiveEvent } from '../../context/ActiveEventContext';
+import Pagination, { usePagination } from '../../components/Pagination';
+
 export default function AdminResults() {
   const { success, error: toastError } = useToast();
   const [events, setEvents] = useState([]);
@@ -13,20 +16,71 @@ export default function AdminResults() {
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [allSetsCompleted, setAllSetsCompleted] = useState(false);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
+  const [hideTrackWinners, setHideTrackWinners] = useState(false);
+  const [hideFlagged, setHideFlagged] = useState(false);
+  const [search, setSearch] = useState('');
   const socket = useSocket();
+  const { activeEvent } = useActiveEvent();
 
-  useEffect(() => { api.get('/events').then(r => { setEvents(r.data); if (r.data.length) setEventId(r.data[0].id); }); }, []);
+  // Build set of track-winner project IDs
+  const trackWinnerIds = new Set(trackWinners.filter(t => t.winner).map(t => t.winner.projectId));
+  const flaggedCount = leaderboard.filter(e => e.projectStatus === 'FLAGGED').length;
+
+  // Filtered leaderboard (optionally removing track winners and/or flagged, and search)
+  const displayLeaderboard = leaderboard.filter(e => {
+    if (hideTrackWinners && trackWinnerIds.has(e.projectId)) return false;
+    if (hideFlagged && e.projectStatus === 'FLAGGED') return false;
+    
+    // Search filter
+    if (search) {
+      const searchLower = search.toLowerCase();
+      const matchesSearch = 
+        e.teamName?.toLowerCase().includes(searchLower) ||
+        e.projectTitle?.toLowerCase().includes(searchLower) ||
+        e.teamNumber?.toString().includes(search) ||
+        e.roomNumber?.toString().includes(search) ||
+        e.roomNumber?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+    
+    return true;
+  }).map((entry, idx) => ({
+    ...entry,
+    rank: idx + 1  // Re-rank the remaining teams
+  }));
+
+  const { paged: pagedLeaderboard, totalPages: lbTotalPages, total: lbTotal } = usePagination(displayLeaderboard, page, perPage);
+  const lbStartIdx = (page - 1) * perPage;
+
+  useEffect(() => { 
+    api.get('/events').then(r => { 
+      setEvents(r.data); 
+      // Default to active event if available, else first event
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length) {
+        setEventId(r.data[0].id);
+      }
+    }); 
+  }, [activeEvent]);
 
   const fetchData = useCallback(async () => {
     if (!eventId) return;
     setRefreshing(true);
     try {
-      const [lbRes, twRes] = await Promise.all([
+      const [lbRes, twRes, progRes] = await Promise.all([
         api.get(`/events/${eventId}/results`),
-        api.get(`/events/${eventId}/results/tracks`)
+        api.get(`/events/${eventId}/results/tracks`),
+        api.get(`/events/${eventId}/assignments/progress`)
       ]);
       setLeaderboard(lbRes.data);
       setTrackWinners(twRes.data);
+      // All standard sets done when nothing is unassigned or in-progress
+      const p = progRes.data;
+      setAllSetsCompleted(p.total > 0 && p.unassigned === 0 && p.inProgress === 0);
     } catch (err) {
       console.error('Fetch failed', err);
     } finally {
@@ -38,19 +92,32 @@ export default function AdminResults() {
     fetchData();
   }, [fetchData]);
 
-  // WS: Refresh when a set is completed anywhere
+  // WS: Refresh when a set is completed anywhere or when flags are updated
   useEffect(() => {
     if (!socket || !eventId) return;
     
-    const handler = (data) => {
+    const handleSetCompleted = (data) => {
       if (data.eventId === eventId) {
         console.log('Set completed event received, refreshing leaderboard...');
         fetchData();
       }
     };
 
-    socket.on('set:completed', handler);
-    return () => socket.off('set:completed', handler);
+    const handleFlagUpdate = (data) => {
+      if (data.eventId === eventId) {
+        console.log('Flag updated, refreshing leaderboard...');
+        fetchData();
+      }
+    };
+
+    socket.on('set:completed', handleSetCompleted);
+    socket.on('flag:updated', handleFlagUpdate);
+    socket.on('flag:created', handleFlagUpdate);
+    return () => {
+      socket.off('set:completed', handleSetCompleted);
+      socket.off('flag:updated', handleFlagUpdate);
+      socket.off('flag:created', handleFlagUpdate);
+    };
   }, [socket, eventId, fetchData]);
 
   const handleShowDetails = async (projectId) => {
@@ -86,11 +153,28 @@ export default function AdminResults() {
       <div className="page-header">
         <h1>Results</h1>
         <div className="flex gap-2">
+          <div style={{position:'relative', width:250}}>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+            <input 
+              type="text" 
+              placeholder="Search teams, projects, room/team no..." 
+              className="form-input" 
+              style={{width:'100%', paddingLeft:32}}
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+            />
+          </div>
           <button className={`btn btn-ghost btn-sm ${refreshing ? 'loading' : ''}`} onClick={fetchData} disabled={refreshing}>
             {refreshing ? '⌛ Refreshing...' : '🔄 Refresh'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={handleExport}>📥 Export CSV</button>
-          <button className="btn btn-primary btn-sm" onClick={handleRejudge}>🔄 Rejudge Ties</button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleRejudge}
+            disabled={!allSetsCompleted}
+            title={!allSetsCompleted ? 'All original judging sets must be completed first' : 'Create tie-breaker sets for tied teams'}
+            style={!allSetsCompleted ? {opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.4)'} : {}}
+          >🔄 Rejudge Ties</button>
         </div>
       </div>
 
@@ -100,52 +184,85 @@ export default function AdminResults() {
       </div>
 
       {tab === 'leaderboard' && (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Rank</th><th>Team</th><th>Team No</th><th>Project</th><th>Stack Pts</th><th>Total Marks</th><th>Evals</th><th>Tied</th></tr></thead>
-            <tbody>
-              {leaderboard.map((e, i) => (
-                <tr 
-                  key={e.projectId} 
-                  style={{cursor:'pointer', ...(i < 3 ? {background: ['rgba(255,215,0,0.08)','rgba(192,192,192,0.06)','rgba(205,127,50,0.06)'][i]} : {})}}
-                  onClick={() => handleShowDetails(e.projectId)}
+        <>
+          {/* Filter bar */}
+          {(trackWinnerIds.size > 0 || flaggedCount > 0 || search) && (
+            <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:12, flexWrap:'wrap'}}>
+              {trackWinnerIds.size > 0 && (
+                <button
+                  className={`btn btn-sm ${hideTrackWinners ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => { setHideTrackWinners(h => !h); setPage(1); }}
+                  style={{fontSize:12}}
                 >
-                  <td><strong style={i < 3 ? {fontSize:18} : {}}>{i < 3 ? ['🥇','🥈','🥉'][i] : e.rank}</strong></td>
-                  <td>
-                    <div style={{display:'flex', alignItems:'center', gap:8}}>
-                      <strong>{e.teamName}</strong>
-                      <div style={{display:'flex', gap:4}}>
-                        {trackWinners.filter(t => t.winner?.projectId === e.projectId).map(t => (
-                          <span 
-                            key={t.trackId} 
-                            style={{
-                              fontSize:9, 
-                              padding:'1px 6px', 
-                              borderRadius:4, 
-                              background:`${t.trackColor}15`, 
-                              color:t.trackColor, 
-                              border:`1px solid ${t.trackColor}40`,
-                              fontWeight:600,
-                              whiteSpace:'nowrap'
-                            }}
-                          >
-                            ⭐ {t.trackName}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </td>
-                  <td>{e.teamNumber}</td>
-                  <td>{e.projectTitle} {e.projectStatus === 'FLAGGED' && <span className="badge" style={{background:'#ff4444',color:'#fff',fontSize:9,padding:'1px 6px'}}>🚩 FLAGGED</span>}</td>
-                  <td style={{fontWeight:700}}>{e.stackPoints}</td>
-                  <td>{e.totalMarks}</td>
-                  <td>{e.timesEvaluated}</td>
-                  <td>{e.isTied ? <span className="badge badge-warning">Tied</span> : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {hideTrackWinners ? '🏷️ Track Winners Removed' : '🏷️ Remove Track Winners'}
+                  <span style={{marginLeft:6, opacity:0.7}}>({trackWinnerIds.size})</span>
+                </button>
+              )}
+              {flaggedCount > 0 && (
+                <button
+                  className={`btn btn-sm ${hideFlagged ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => { setHideFlagged(h => !h); setPage(1); }}
+                  style={{fontSize:12}}
+                >
+                  {hideFlagged ? '🚩 Flagged Removed' : '🚩 Remove Flagged'}
+                  <span style={{marginLeft:6, opacity:0.7}}>({flaggedCount})</span>
+                </button>
+              )}
+              {(hideTrackWinners || hideFlagged || search) && (
+                <span className="text-sm text-muted" style={{fontSize:11}}>
+                  Showing {displayLeaderboard.length} of {leaderboard.length} teams {search && `(search: "${search}")`}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Rank</th><th>Team</th><th>Team No</th><th>Project</th><th>Stack Pts</th><th>Total Marks</th><th>Evals</th><th>Tied</th></tr></thead>
+              <tbody>
+                {pagedLeaderboard.map((e, i) => {
+                  const globalIdx = e.rank - 1;  // Use re-ranked position within entire filtered list
+                  const showMedal = globalIdx < 3;  // Show medals only for top 3 in filtered leaderboard
+                  return (
+                    <tr 
+                      key={e.projectId} 
+                      style={{cursor:'pointer', ...(showMedal ? {background: ['rgba(255,215,0,0.08)','rgba(192,192,192,0.06)','rgba(205,127,50,0.06)'][globalIdx]} : {})}}
+                      onClick={() => handleShowDetails(e.projectId)}
+                    >
+                      <td><strong style={showMedal ? {fontSize:18} : {}}>{showMedal ? ['🥇','🥈','🥉'][globalIdx] : e.rank}</strong></td>
+                      <td>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <strong>{e.teamName}</strong>
+                          <div style={{display:'flex', gap:4}}>
+                            {trackWinners.filter(t => t.winner?.projectId === e.projectId).map(t => (
+                              <span 
+                                key={t.trackId} 
+                                style={{
+                                  fontSize:9, padding:'1px 6px', borderRadius:4, 
+                                  background:`${t.trackColor}15`, color:t.trackColor, 
+                                  border:`1px solid ${t.trackColor}40`, fontWeight:600, whiteSpace:'nowrap'
+                                }}
+                              >⭐ {t.trackName}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                      <td>{e.teamNumber}</td>
+                      <td>{e.projectTitle} {e.projectStatus === 'FLAGGED' && <span className="badge" style={{background:'#ff4444',color:'#fff',fontSize:9,padding:'1px 6px'}}>🚩 FLAGGED</span>}</td>
+                      <td style={{fontWeight:700}}>{e.stackPoints}</td>
+                      <td>{e.totalMarks}</td>
+                      <td>{e.timesEvaluated}</td>
+                      <td>{e.isTied ? <span className="badge badge-warning">Tied</span> : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={page} totalPages={lbTotalPages} total={lbTotal}
+            perPage={perPage} onPageChange={setPage} onPerPageChange={setPerPage}
+          />
+        </>
       )}
 
       {tab === 'tracks' && (

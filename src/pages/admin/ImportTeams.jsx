@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminImportTeams() {
   const { error: toastError } = useToast();
@@ -9,8 +10,18 @@ export default function AdminImportTeams() {
   const [csv, setCsv] = useState('team_name,team_number,room_number,team_leader,team_phone\n');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { activeEvent } = useActiveEvent();
 
-  useEffect(() => { api.get('/events').then(r => { setEvents(r.data); if (r.data.length) setEventId(r.data[0].id); }); }, []);
+  useEffect(() => { 
+    api.get('/events').then(r => { 
+      setEvents(r.data); 
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length && !eventId) {
+        setEventId(r.data[0].id);
+      }
+    }); 
+  }, [activeEvent]);
 
   const handleImport = async () => {
     setLoading(true);

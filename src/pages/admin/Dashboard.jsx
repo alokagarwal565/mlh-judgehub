@@ -1,32 +1,54 @@
 import { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import api from '../../services/api';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminDashboard() {
   const [events, setEvents] = useState([]);
   const [progress, setProgress] = useState(null);
   const socket = useSocket();
+  const { activeEvent } = useActiveEvent();
 
   useEffect(() => {
     api.get('/events').then(r => setEvents(r.data));
   }, []);
 
   useEffect(() => {
-    if (events.length > 0) {
-      api.get(`/events/${events[0].id}/assignments/progress`).then(r => setProgress(r.data)).catch(() => {});
+    // Priority: 1. Active Event, 2. First event in list
+    const targetEvent = activeEvent || events[0];
+    if (targetEvent) {
+      api.get(`/events/${targetEvent.id}/assignments/progress`).then(r => setProgress(r.data)).catch(() => {});
     }
-  }, [events]);
+  }, [events, activeEvent]);
 
   useEffect(() => {
     if (!socket) return;
-    socket.on('judging:progress', (data) => setProgress(prev => ({ ...prev, ...data })));
-    socket.on('set:completed', () => {
-      if (events.length > 0) api.get(`/events/${events[0].id}/assignments/progress`).then(r => setProgress(r.data));
-    });
-    return () => { socket.off('judging:progress'); socket.off('set:completed'); };
-  }, [socket, events]);
+    const targetEvent = activeEvent || events[0];
 
-  const activeEvent = events[0];
+    const handleProgress = (data) => {
+      // data.eventId check ensures we only update if it's the right event
+      if (targetEvent && data.eventId === targetEvent.id) {
+        setProgress(prev => ({ ...prev, ...data }));
+      }
+    };
+
+    const handleCompleted = (data) => {
+      // data.eventId might be null for older events, fallback to current target
+      if (targetEvent && (!data.eventId || data.eventId === targetEvent.id)) {
+        api.get(`/events/${targetEvent.id}/assignments/progress`).then(r => setProgress(r.data));
+      }
+    };
+
+    socket.on('judging:progress', handleProgress);
+    socket.on('set:completed', handleCompleted);
+
+    return () => {
+      socket.off('judging:progress', handleProgress);
+      socket.off('set:completed', handleCompleted);
+    };
+  }, [socket, events, activeEvent]);
+
+  const displayEvent = activeEvent || events[0];
   const pct = progress ? Math.round((progress.completed / Math.max(progress.total, 1)) * 100) : 0;
 
   return (
@@ -51,11 +73,11 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {activeEvent && (
+      {displayEvent && (
         <div className="card">
           <div className="card-header">
-            <span className="card-title">Active Event: {activeEvent.name}</span>
-            <span className={`badge ${activeEvent.status === 'JUDGING' ? 'badge-warning' : activeEvent.status === 'COMPLETED' ? 'badge-success' : 'badge-info'}`}>{activeEvent.status}</span>
+            <span className="card-title">Active Event: {displayEvent.name}</span>
+            <span className={`badge ${displayEvent.status === 'JUDGING' ? 'badge-warning' : displayEvent.status === 'COMPLETED' ? 'badge-success' : 'badge-info'}`}>{displayEvent.status}</span>
           </div>
           <div style={{marginTop:16}}>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:13,color:'var(--text-secondary)'}}>

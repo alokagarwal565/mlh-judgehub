@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function AdminSetDetail() {
   const { setId } = useParams();
   const navigate = useNavigate();
   const { error: toastError } = useToast();
+  const { activeEvent } = useActiveEvent();
 
   // Compute the linear range label for a set
   const getSetRange = (projects) => {
@@ -30,7 +32,7 @@ export default function AdminSetDetail() {
 
   useEffect(() => {
     api.get('/events').then(r => {
-      const ev = r.data[0];
+      const ev = activeEvent || r.data[0];
       if (ev) {
         setEventId(ev.id);
         api.get(`/events/${ev.id}/sets/${setId}`).then(r => {

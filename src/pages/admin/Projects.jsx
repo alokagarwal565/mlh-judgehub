@@ -1,16 +1,24 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useSocket } from '../../context/SocketContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
+import Pagination, { usePagination } from '../../components/Pagination';
 
 export default function AdminProjects() {
   const { success, error: toastError } = useToast();
+  const socket = useSocket();
   const [events, setEvents] = useState([]);
   const [projects, setProjects] = useState([]);
   const [eventId, setEventId] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const { activeEvent } = useActiveEvent();
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+  const [deletingProject, setDeletingProject] = useState(null); // null | id
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
   const [formData, setFormData] = useState({
     title: '', teamName: '', teamNumber: '', 
     roomNumber: '', leaderName: '', phone: '', email: '', password: '', status: 'SUBMITTED'
@@ -23,11 +31,34 @@ export default function AdminProjects() {
   useEffect(() => { 
     api.get('/events').then(r => { 
       setEvents(r.data); 
-      if (r.data.length && !eventId) setEventId(r.data[0].id); 
+      // Default to active event if available, else first event
+      if (activeEvent) {
+        setEventId(activeEvent.id);
+      } else if (r.data.length && !eventId) {
+        setEventId(r.data[0].id);
+      }
     }); 
-  }, []);
+  }, [activeEvent]);
 
   useEffect(() => { fetchProjects(); }, [eventId]);
+
+  // Socket: Refresh projects when a flag is updated
+  useEffect(() => {
+    if (!socket || !eventId) return;
+    
+    const handler = (data) => {
+      if (data.eventId === eventId) {
+        fetchProjects();
+      }
+    };
+
+    socket.on('flag:updated', handler);
+    socket.on('flag:created', handler);
+    return () => {
+      socket.off('flag:updated', handler);
+      socket.off('flag:created', handler);
+    };
+  }, [socket, eventId]);
 
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -57,6 +88,11 @@ export default function AdminProjects() {
       p.roomNumber?.toLowerCase().includes(q)
     );
   });
+
+  // Reset page on filter/search change
+  useEffect(() => { setPage(1); }, [search, statusFilter]);
+
+  const { paged: pagedProjects, totalPages, total } = usePagination(filteredProjects, page, perPage);
 
   const handleOpenModal = (proj = null) => {
     if (proj) {
@@ -97,14 +133,20 @@ export default function AdminProjects() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this project? This will also remove the associated team user if they have no other projects.')) return;
+  const confirmDelete = async () => {
+    if (!deletingProject) return;
     try {
-      await api.delete(`/events/${eventId}/projects/${id}`);
+      await api.delete(`/events/${eventId}/projects/${deletingProject}`);
+      success('Project and associated team data removed');
+      setDeletingProject(null);
       fetchProjects();
     } catch (err) {
       toastError('Failed to delete project');
     }
+  };
+
+  const handleDelete = (id) => {
+    setDeletingProject(id);
   };
 
   return (
@@ -112,14 +154,17 @@ export default function AdminProjects() {
       <div className="page-header">
         <h1>Projects</h1>
         <div className="flex gap-2">
-          <input 
-            type="text" 
-            placeholder="Search teams, projects, leaders..." 
-            className="form-input" 
-            style={{width:250}}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <div style={{position:'relative', width:250}}>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+            <input 
+              type="text" 
+              placeholder="Search teams, projects, leaders..." 
+              className="form-input" 
+              style={{width:'100%', paddingLeft:32}}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
           <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Project</button>
           <span className="badge badge-info">{filteredProjects.length} teams</span>
         </div>
@@ -154,7 +199,7 @@ export default function AdminProjects() {
         <table>
           <thead><tr><th>Room No.</th><th>Team No</th><th>Team</th><th>Leader</th><th>Phone</th><th>Project</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
-            {filteredProjects.map(p => (
+            {pagedProjects.map(p => (
               <tr key={p.id} style={{cursor:'pointer'}} onClick={() => handleShowDetails(p.id)}>
                 <td><strong>{p.roomNumber}</strong></td>
                 <td>{p.teamNumber}</td>
@@ -188,6 +233,11 @@ export default function AdminProjects() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={page} totalPages={totalPages} total={total}
+        perPage={perPage} onPageChange={setPage} onPerPageChange={setPerPage}
+      />
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -338,6 +388,32 @@ export default function AdminProjects() {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirm Modal ──────────────────────────── */}
+      {deletingProject && (
+        <div className="modal-overlay" onClick={() => setDeletingProject(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
+            <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
+            <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
+              <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
+              <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Project?</h2>
+              <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
+                You're about to delete <strong style={{color: 'var(--text-primary)'}}>{projects.find(p => p.id === deletingProject)?.title}</strong>.
+                <br/><br/>
+                All associated <strong>judging progress</strong> and the <strong>team account</strong> (if unique to this event) will be permanently removed.
+                <br/><br/>
+                This action <strong>cannot be undone</strong>.
+              </p>
+            </div>
+            <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
+              <button className="btn btn-ghost" onClick={() => setDeletingProject(null)} style={{flex: 1}}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDelete} style={{flex: 1}}>
+                🗑 Delete Project
+              </button>
             </div>
           </div>
         </div>
