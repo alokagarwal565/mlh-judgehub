@@ -70,6 +70,7 @@ CREATE TABLE "projects" (
     CONSTRAINT "projects_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "projects_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
+CREATE UNIQUE INDEX "projects_event_id_team_number_key" ON "projects"("event_id", "team_number");
 
 CREATE TABLE "judge_sets" (
     "id"         TEXT NOT NULL DEFAULT gen_random_uuid(),

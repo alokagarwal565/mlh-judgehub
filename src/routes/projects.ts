@@ -33,6 +33,37 @@ router.get('/:eventId/projects', authenticate, async (req, res) => {
 router.post('/:eventId/projects', authenticate, async (req, res) => {
   try {
     const { title, description, demoLink, videoUrl, teamName, teamNumber, roomNumber, leaderName, phone, email, password } = req.body;
+
+    if (req.user!.role === 'ADMIN' && teamNumber) {
+      const existingProject = await prisma.project.findFirst({
+        where: { eventId: req.params.eventId, teamNumber },
+        include: { team: true }
+      });
+
+      if (existingProject) {
+        const updatedProject = await prisma.project.update({
+          where: { id: existingProject.id },
+          data: {
+            ...(title !== undefined && { title }),
+            ...(description !== undefined && { description }),
+            ...(demoLink !== undefined && { demoLink }),
+            ...(videoUrl !== undefined && { videoUrl }),
+            ...(roomNumber !== undefined && { roomNumber }),
+            ...(teamNumber !== undefined && { teamNumber }),
+            ...(leaderName !== undefined && { leaderName }),
+            team: {
+              update: {
+                ...(teamName !== undefined && { name: teamName }),
+                ...(phone !== undefined && { phone })
+              }
+            }
+          },
+          include: { team: true }
+        });
+
+        return res.json(updatedProject);
+      }
+    }
     
     // If teamName/email provided, create/link user first (Manual Add from Admin)
     let teamId = req.user!.role === 'ADMIN' ? null : req.user!.userId;
@@ -154,13 +185,37 @@ router.post('/:eventId/projects/import', authenticate, requireRole('ADMIN'), asy
 
       if (!teamName || !teamNumber || !teamLeader || !teamPhone) continue;
 
-      const password = crypto.randomBytes(4).toString('hex'); // 8-char random
+      const existingProject = await prisma.project.findFirst({
+        where: { eventId: req.params.eventId, teamNumber }
+      });
+
+      if (existingProject) {
+        await prisma.project.update({
+          where: { id: existingProject.id },
+          data: {
+            title: `${teamName}'s Project`,
+            roomNumber: roomNumber || teamNumber,
+            teamNumber,
+            leaderName: teamLeader,
+            team: {
+              update: {
+                name: teamName,
+                phone: teamPhone
+              }
+            }
+          }
+        });
+        continue;
+      }
+
       const email = `team-${teamNumber.toLowerCase().replace(/[^a-z0-9]/g, '')}@event.local`;
-      const passwordHash = await bcrypt.hash(password, 10);
 
       // Create or update user
       let user = await prisma.user.findUnique({ where: { email } });
+      let password = '';
       if (!user) {
+        password = crypto.randomBytes(4).toString('hex'); // 8-char random
+        const passwordHash = await bcrypt.hash(password, 10);
         user = await prisma.user.create({
           data: {
             name: teamName,
@@ -171,7 +226,6 @@ router.post('/:eventId/projects/import', authenticate, requireRole('ADMIN'), asy
           }
         });
       } else {
-        // Update team number, phone for the current event
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -181,25 +235,20 @@ router.post('/:eventId/projects/import', authenticate, requireRole('ADMIN'), asy
         });
       }
 
-      // Check if project stub already exists for this event/team
-      const existingProject = await prisma.project.findFirst({
-        where: { eventId: req.params.eventId, teamId: user.id }
+      await prisma.project.create({
+        data: {
+          eventId: req.params.eventId,
+          teamId: user.id,
+          title: `${teamName}'s Project`,
+          roomNumber: roomNumber || teamNumber,
+          teamNumber,
+          leaderName: teamLeader
+        }
       });
 
-      if (!existingProject) {
-        await prisma.project.create({
-          data: {
-            eventId: req.params.eventId,
-            teamId: user.id,
-            title: `${teamName}'s Project`,
-            roomNumber: roomNumber || teamNumber,
-            teamNumber: teamNumber,
-            leaderName: teamLeader
-          }
-        });
+      if (password) {
+        credentials.push({ teamName, teamNumber, leaderName: teamLeader, phone: teamPhone, email, password });
       }
-
-      credentials.push({ teamName, teamNumber, leaderName: teamLeader, phone: teamPhone, email, password });
     }
 
     res.status(201).json({

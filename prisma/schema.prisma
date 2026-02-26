@@ -140,6 +140,7 @@ model Project {
   stackRankVotes   StackRankVote[]
   trackNominations TrackNomination[]
 
+  @@unique([eventId, teamNumber])
   @@map("projects")
 }
 
