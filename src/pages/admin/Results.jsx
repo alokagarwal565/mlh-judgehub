@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
-
+import { useLoader } from '../../context/LoaderContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
 import Pagination, { usePagination } from '../../components/Pagination';
 
@@ -24,6 +24,7 @@ export default function AdminResults() {
   const [search, setSearch] = useState('');
   const socket = useSocket();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   // Build set of track-winner project IDs
   const trackWinnerIds = new Set(trackWinners.filter(t => t.winner).map(t => t.winner.projectId));
@@ -56,6 +57,7 @@ export default function AdminResults() {
   const lbStartIdx = (page - 1) * perPage;
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       // Default to active event if available, else first event
@@ -64,12 +66,13 @@ export default function AdminResults() {
       } else if (r.data.length) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   const fetchData = useCallback(async () => {
     if (!eventId) return;
     setRefreshing(true);
+    if (leaderboard.length === 0) showLoader('Loading results...');
     try {
       const [lbRes, twRes, progRes] = await Promise.all([
         api.get(`/events/${eventId}/results`),
@@ -85,6 +88,7 @@ export default function AdminResults() {
       console.error('Fetch failed', err);
     } finally {
       setRefreshing(false);
+      hideLoader();
     }
   }, [eventId]);
 

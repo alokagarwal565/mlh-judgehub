@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminSetDetail() {
   const { setId } = useParams();
   const navigate = useNavigate();
   const { error: toastError } = useToast();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   // Compute the linear range label for a set
   const getSetRange = (projects) => {
@@ -31,6 +33,7 @@ export default function AdminSetDetail() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    showLoader('Loading set details...');
     api.get('/events').then(r => {
       const ev = activeEvent || r.data[0];
       if (ev) {
@@ -60,6 +63,7 @@ export default function AdminSetDetail() {
           if (r.data.stackRankVotes?.length >= 3) {
             const sortedVotes = [...r.data.stackRankVotes].sort((a, b) => a.rank - b.rank);
             setRankings(sortedVotes.map(v => v.projectId));
+          hideLoader();
           }
         });
         api.get(`/events/${ev.id}/tracks`).then(r => setTracks(r.data));

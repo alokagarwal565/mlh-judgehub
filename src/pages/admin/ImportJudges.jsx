@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminImportJudges() {
   const { error: toastError } = useToast();
@@ -11,8 +12,10 @@ export default function AdminImportJudges() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       if (activeEvent) {
@@ -20,7 +23,7 @@ export default function AdminImportJudges() {
       } else if (r.data.length && !eventId) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   const handleImport = async () => {

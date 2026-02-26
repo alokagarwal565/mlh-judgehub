@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
+import { useLoader } from '../../context/LoaderContext';
 
 const ROLE_TABS = ['JUDGE', 'ADMIN'];
 
@@ -17,11 +18,13 @@ export default function AdminUsers() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [revealed, setRevealed] = useState({});
+  const { showLoader, hideLoader } = useLoader();
 
   const load = useCallback(async () => {
     setLoading(true);
+    if (users.length === 0) showLoader('Loading users...');
     try { const { data } = await api.get('/admin/users'); setUsers(data); }
-    finally { setLoading(false); }
+    finally { setLoading(false); hideLoader(); }
   }, []);
 
   useEffect(() => { load(); }, [load]);

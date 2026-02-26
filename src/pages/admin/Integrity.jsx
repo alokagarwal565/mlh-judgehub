@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminIntegrity() {
   const { error: toastError } = useToast();
@@ -14,8 +15,10 @@ export default function AdminIntegrity() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [severityFilter, setSeverityFilter] = useState('ALL');
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       if (activeEvent) {
@@ -23,9 +26,17 @@ export default function AdminIntegrity() {
       } else if (r.data.length && !eventId) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
-  useEffect(() => { if (eventId) api.get(`/events/${eventId}/flags`).then(r => setFlags(r.data)).catch(() => {}); }, [eventId]);
+  useEffect(() => { 
+    if (eventId) {
+      showLoader('Loading flags...');
+      api.get(`/events/${eventId}/flags`)
+        .then(r => setFlags(r.data))
+        .catch(() => {})
+        .finally(() => hideLoader());
+    }
+  }, [eventId]);
 
   const runChecks = async () => {
     setLoading(true);
@@ -146,11 +157,25 @@ export default function AdminIntegrity() {
                     <td style={{fontSize:12,maxWidth:300}}>{f.reason}</td>
                     <td><span className={`badge ${f.status === 'OPEN' ? 'badge-warning' : f.status === 'REVIEWED' ? 'badge-success' : 'badge-info'}`}>{f.status}</span></td>
                     <td>
-                      <div className="flex gap-2">
-                        {f.status === 'OPEN' && <>
-                          <button className="btn btn-success btn-sm" onClick={() => updateFlag(f.id, 'REVIEWED')}>✓</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => updateFlag(f.id, 'DISMISSED')}>✕</button>
-                        </>}
+                      <div className="flex gap-2" style={{alignItems: 'center', flexWrap: 'wrap'}}>
+                        {f.status === 'OPEN' && (
+                          <>
+                            <button className="btn btn-success btn-sm" onClick={() => updateFlag(f.id, 'REVIEWED')} title="Mark as Reviewed">✓ Review</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => updateFlag(f.id, 'DISMISSED')} title="Dismiss flag">✕ Dismiss</button>
+                          </>
+                        )}
+                        {f.status === 'REVIEWED' && (
+                          <>
+                            <button className="btn btn-info btn-sm" onClick={() => updateFlag(f.id, 'OPEN')} title="Reopen flag">⟲ Reopen</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => updateFlag(f.id, 'DISMISSED')} title="Dismiss flag">✕ Dismiss</button>
+                          </>
+                        )}
+                        {f.status === 'DISMISSED' && (
+                          <>
+                            <button className="btn btn-warning btn-sm" onClick={() => updateFlag(f.id, 'OPEN')} title="Reopen flag">⟲ Reopen</button>
+                            <button className="btn btn-info btn-sm" onClick={() => updateFlag(f.id, 'REVIEWED')} title="Mark as Reviewed">✓ Review</button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

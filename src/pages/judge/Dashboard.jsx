@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function JudgeDashboard({ isAdminView }) {
   const { viewAsJudgeId } = useParams();
@@ -17,21 +18,24 @@ export default function JudgeDashboard({ isAdminView }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const socket = useSocket();
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => {
+      showLoader('Loading events...');
     api.get('/events').then(r => {
       setEvents(r.data);
       const active = r.data.find(e => e.status === 'JUDGING') || r.data[0];
       if (active) setEventId(active.id);
-    });
+    }).finally(() => hideLoader());
   }, []);
 
   const loadSets = useCallback(() => {
     if (eventId) {
+        showLoader('Loading your sets...');
       const url = isAdminView 
         ? `/events/${eventId}/assignments/judge/${viewAsJudgeId}`
         : `/events/${eventId}/assignments/my-sets`;
-      api.get(url).then(r => setSets(r.data));
+      api.get(url).then(r => setSets(r.data)).finally(() => hideLoader());
     }
   }, [eventId, isAdminView, viewAsJudgeId]);
 
@@ -203,7 +207,6 @@ export default function JudgeDashboard({ isAdminView }) {
         <div>
           <h3 style={{marginBottom:12,fontSize:14,color:'var(--success)'}}>✅ Completed ({completed.length})</h3>
           {completed.map(set => {
-            const canEdit = inProgress.length === 0;
             return (
               <div key={set.id} className="card mb-4" style={{borderLeft:'3px solid var(--success)'}}>
                 <div className="flex items-center justify-between">
@@ -224,14 +227,12 @@ export default function JudgeDashboard({ isAdminView }) {
                   const hasPendingRequest = latestRequest?.status === 'PENDING';
                   const hasDeniedRequest = latestRequest?.status === 'DENIED';
                   
-                  if (canEdit || hasApprovedRequest) {
-                    const isBlockedByOtherSet = !canEdit && hasApprovedRequest;
+                  // Only allow editing if admin approved the request
+                  if (hasApprovedRequest) {
                     return (
                       <button
                         className="btn btn-ghost btn-sm mt-4"
-                        title={isBlockedByOtherSet ? "Complete your active set before editing this one" : "Reopen this set to edit scores"}
-                        disabled={isBlockedByOtherSet}
-                        style={isBlockedByOtherSet ? {opacity:0.6, cursor:'not-allowed'} : {}}
+                        title="Reopen this set to edit scores"
                         onClick={async () => {
                           if (isAdminView) {
                             navigate(`/admin/view-judge/${viewAsJudgeId}/score/${set.id}`);
@@ -267,7 +268,7 @@ export default function JudgeDashboard({ isAdminView }) {
                         >
                           👀 View Scores
                         </button>
-                        {!isAdminView && !hasPendingRequest && (
+                        {!isAdminView && !hasPendingRequest && !hasDeniedRequest && (
                           <button
                             className="btn btn-primary btn-sm mt-4"
                             style={{fontSize:11}}
@@ -283,9 +284,9 @@ export default function JudgeDashboard({ isAdminView }) {
                         )}
                       </div>
                       
-                      {!canEdit && !isAdminView && !hasApprovedRequest && !hasPendingRequest && (
+                      {!isAdminView && !hasApprovedRequest && !hasPendingRequest && !hasDeniedRequest && (
                         <div className="text-sm text-muted" style={{marginTop:8,fontSize:11,display:'flex',alignItems:'center',gap:6}}>
-                          <span style={{opacity:0.6}}>🔒</span> Editing of scores are not allowed
+                          <span style={{opacity:0.6}}>🔒</span> Request admin approval to edit scores
                         </div>
                       )}
 

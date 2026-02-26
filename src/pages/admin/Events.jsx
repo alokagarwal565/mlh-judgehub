@@ -30,6 +30,17 @@ export default function AdminEvents() {
     }
   };
 
+  const handleDeactivate = async (id) => {
+    try {
+      await api.post(`/events/${id}/deactivate`);
+      success('Event deactivated');
+      loadEvents();
+      refreshActiveEvent();
+    } catch (err) {
+      toastError('Failed to deactivate event');
+    }
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
@@ -267,6 +278,11 @@ export default function AdminEvents() {
                   {!event.isActive && (
                     <button className="btn btn-primary btn-sm" onClick={() => handleActivate(event.id)} style={{fontSize:10, borderRadius:8}}>
                       Set Active
+                    </button>
+                  )}
+                  {event.isActive && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleDeactivate(event.id)} style={{fontSize:10, borderRadius:8, color: 'var(--text-muted)'}}>
+                      Deactivate
                     </button>
                   )}
                   <button className="btn btn-ghost btn-sm" onClick={() => handleEdit(event)} title="Edit Event Details">✏️</button>

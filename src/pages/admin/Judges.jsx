@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminJudges() {
   const { success, error: toastError } = useToast();
@@ -15,12 +16,20 @@ export default function AdminJudges() {
   const [deletingJudge, setDeletingJudge] = useState(null); // null | id
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '' });
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   const fetchJudges = () => {
-    if (eventId) api.get(`/events/${eventId}/judges`).then(r => setJudges(r.data)).catch(() => {});
+    if (eventId) {
+      showLoader('Loading judges...');
+      api.get(`/events/${eventId}/judges`)
+        .then(r => setJudges(r.data))
+        .catch(() => {})
+        .finally(() => hideLoader());
+    }
   };
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       if (activeEvent) {
@@ -28,7 +37,7 @@ export default function AdminJudges() {
       } else if (r.data.length && !eventId) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   useEffect(() => { fetchJudges(); }, [eventId]);

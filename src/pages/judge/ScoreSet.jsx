@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const readonly = isAdminView || isReadOnly;
   const { setId, viewAsJudgeId } = useParams();
   const navigate = useNavigate();
   const { error: toastError } = useToast();
+    const { showLoader, hideLoader } = useLoader();
   const [set, setSet] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -27,6 +29,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const [flagEditMode, setFlagEditMode] = useState(false);
 
   useEffect(() => {
+    showLoader('Loading scoring set...');
     api.get(`/events`).then(r => {
       const ev = r.data.find(e => e.status === 'JUDGING') || r.data[0];
       if (ev) {
@@ -92,8 +95,11 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         });
 
         api.get(`/events/${ev.id}/tracks`).then(r => setTracks(r.data));
+        hideLoader();
+      } else {
+        hideLoader();
       }
-    });
+    }).catch(() => hideLoader());
   }, [setId]);
 
   // Timer

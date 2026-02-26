@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function TeamDashboard() {
   const { user } = useAuth();
@@ -8,8 +9,10 @@ export default function TeamDashboard() {
   const [project, setProject] = useState(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', demoLink: '', videoUrl: '' });
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => {
+      showLoader('Loading your project...');
     api.get('/events').then(r => {
       setEvents(r.data);
       if (r.data.length) {
@@ -19,9 +22,11 @@ export default function TeamDashboard() {
             setProject(mine);
             setForm({ title: mine.title, description: mine.description || '', demoLink: mine.demoLink || '', videoUrl: mine.videoUrl || '' });
           }
-        });
+        }).finally(() => hideLoader());
+      } else {
+        hideLoader();
       }
-    });
+    }).catch(() => hideLoader());
   }, [user]);
 
   const handleSave = async () => {

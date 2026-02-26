@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import api from '../../services/api';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminProgress() {
   const [events, setEvents] = useState([]);
@@ -12,8 +13,10 @@ export default function AdminProgress() {
   const [activityFilter, setActivityFilter] = useState('ALL');
   const socket = useSocket();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       // Default to active event if available, else first event
@@ -22,13 +25,19 @@ export default function AdminProgress() {
       } else if (r.data.length) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   useEffect(() => {
     if (!eventId) return;
-    api.get(`/events/${eventId}/assignments/progress`).then(r => setProgress(r.data));
-    api.get(`/events/${eventId}/judges`).then(r => setJudges(r.data)).catch(() => {});
+    showLoader('Loading progress data...');
+    Promise.all([
+      api.get(`/events/${eventId}/assignments/progress`),
+      api.get(`/events/${eventId}/judges`).catch(() => ({ data: [] }))
+    ]).then(([progressRes, judgesRes]) => {
+      setProgress(progressRes.data);
+      setJudges(judgesRes.data);
+    }).finally(() => hideLoader());
   }, [eventId]);
 
   useEffect(() => {

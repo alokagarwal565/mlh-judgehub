@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminAssignments() {
   const { error: toastError, success } = useToast();
@@ -20,6 +21,7 @@ export default function AdminAssignments() {
   const [assigning, setAssigning] = useState(false);
   const navigate = useNavigate();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   const filterSet = (set) => {
     const q = search.toLowerCase().trim();
@@ -35,6 +37,7 @@ export default function AdminAssignments() {
   };
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       if (activeEvent) {
@@ -42,14 +45,19 @@ export default function AdminAssignments() {
       } else if (r.data.length) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   const currentEvent = events.find(e => e.id === eventId);
   const isJudging = currentEvent?.status === 'JUDGING';
   useEffect(() => { if (eventId) loadSets(); }, [eventId]);
 
-  const loadSets = () => { api.get(`/events/${eventId}/assignments`).then(r => setSets(r.data)); };
+  const loadSets = () => { 
+    showLoader('Loading assignments...');
+    api.get(`/events/${eventId}/assignments`)
+      .then(r => setSets(r.data))
+      .finally(() => hideLoader());
+  };
 
   const loadIdleJudges = () => {
     if (!eventId) return;

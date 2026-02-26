@@ -3,6 +3,7 @@ import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 import Pagination, { usePagination } from '../../components/Pagination';
 
 export default function AdminProjects() {
@@ -14,6 +15,7 @@ export default function AdminProjects() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
   const [deletingProject, setDeletingProject] = useState(null); // null | id
@@ -25,10 +27,16 @@ export default function AdminProjects() {
   });
 
   const fetchProjects = () => {
-    if (eventId) api.get(`/events/${eventId}/projects`).then(r => setProjects(r.data));
+    if (eventId) {
+      showLoader('Loading projects...');
+      api.get(`/events/${eventId}/projects`)
+        .then(r => setProjects(r.data))
+        .finally(() => hideLoader());
+    }
   };
 
   useEffect(() => { 
+    showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
       // Default to active event if available, else first event
@@ -37,7 +45,7 @@ export default function AdminProjects() {
       } else if (r.data.length && !eventId) {
         setEventId(r.data[0].id);
       }
-    }); 
+    }).finally(() => hideLoader()); 
   }, [activeEvent]);
 
   useEffect(() => { fetchProjects(); }, [eventId]);

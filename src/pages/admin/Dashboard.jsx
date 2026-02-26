@@ -2,15 +2,20 @@ import { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import api from '../../services/api';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function AdminDashboard() {
   const [events, setEvents] = useState([]);
   const [progress, setProgress] = useState(null);
   const socket = useSocket();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => {
-    api.get('/events').then(r => setEvents(r.data));
+    showLoader('Loading dashboard...');
+    api.get('/events')
+      .then(r => setEvents(r.data))
+      .finally(() => hideLoader());
   }, []);
 
   useEffect(() => {

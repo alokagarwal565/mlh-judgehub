@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
+import { useLoader } from '../../context/LoaderContext';
 
 export default function EditRequests() {
   const [requests, setRequests] = useState([]);
@@ -10,8 +11,10 @@ export default function EditRequests() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const { info, error: toastError } = useToast();
   const socket = useSocket();
+  const { showLoader, hideLoader } = useLoader();
 
   const loadRequests = async () => {
+    if (loading) showLoader('Loading edit requests...');
     try {
       const res = await api.get('/edit-requests/admin');
       setRequests(res.data);
@@ -19,6 +22,7 @@ export default function EditRequests() {
       toastError('Failed to load edit requests');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 
@@ -111,6 +115,35 @@ export default function EditRequests() {
       </div>
 
       <div className="card" style={{padding:0, border:'1px solid var(--border-light)', overflow:'hidden'}}>
+        {/* Status filter pills - Always visible */}
+        <div style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', display:'flex', gap:8, flexWrap:'wrap'}}>
+          {[
+            { key:'ALL',       label:'All' },
+            { key:'PENDING',   label:'⏳ Pending' },
+            { key:'APPROVED',  label:'✅ Approved' },
+            { key:'DENIED',    label:'❌ Denied' },
+            { key:'USED',      label:'✏️ Used' },
+          ].map(f => (
+            <button
+              key={f.key}
+              className={`btn btn-sm ${statusFilter === f.key ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setStatusFilter(f.key)}
+            >
+              {f.label}
+              {f.key !== 'ALL' && (
+                <span style={{marginLeft:4, opacity:0.7, fontSize:10}}>
+                  ({statusCounts[f.key]})
+                </span>
+              )}
+            </button>
+          ))}
+          {search && (
+            <span className="text-sm text-muted" style={{fontSize:11, marginLeft:'auto', alignSelf:'center'}}>
+              Showing {filteredRequests.length} of {requests.length} requests
+            </span>
+          )}
+        </div>
+
         {loading ? (
           <div style={{padding:40}}>
             <div className="skeleton" style={{height: 40, width:'100%', marginBottom:12}} />
@@ -123,48 +156,19 @@ export default function EditRequests() {
             <p style={{fontSize:14, maxWidth:300, margin:'0 auto'}}>{search || statusFilter !== 'ALL' ? 'Try adjusting your search or filters.' : 'When judges request to edit a completed set, they will appear here for your review.'}</p>
           </div>
         ) : (
-          <>
-            {/* Status filter pills */}
-            <div style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', display:'flex', gap:8, flexWrap:'wrap'}}>
-              {[
-                { key:'ALL',       label:'All' },
-                { key:'PENDING',   label:'⏳ Pending' },
-                { key:'APPROVED',  label:'✅ Approved' },
-                { key:'DENIED',    label:'❌ Denied' },
-                { key:'USED',      label:'✏️ Used' },
-              ].map(f => (
-                <button
-                  key={f.key}
-                  className={`btn btn-sm ${statusFilter === f.key ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setStatusFilter(f.key)}
-                >
-                  {f.label}
-                  {f.key !== 'ALL' && (
-                    <span style={{marginLeft:4, opacity:0.7, fontSize:10}}>
-                      ({statusCounts[f.key]})
-                    </span>
-                  )}
-                </button>
-              ))}
-              {search && (
-                <span className="text-sm text-muted" style={{fontSize:11, marginLeft:'auto', alignSelf:'center'}}>
-                  Showing {filteredRequests.length} of {requests.length} requests
-                </span>
-              )}
-            </div>
-            <div className="table-wrapper">
-              <table className="table" style={{borderCollapse:'separate', borderSpacing:0}}>
-                <thead>
-                  <tr style={{background:'rgba(255,255,255,0.02)'}}>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Judge</th>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Event & Set</th>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Reason for Request</th>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Submitted</th>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Status</th>
-                    <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', textAlign:'right'}}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+          <div className="table-wrapper">
+            <table className="table" style={{borderCollapse:'separate', borderSpacing:0}}>
+              <thead>
+                <tr style={{background:'rgba(255,255,255,0.02)'}}>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Judge</th>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Event & Set</th>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Reason for Request</th>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Submitted</th>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Status</th>
+                  <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', textAlign:'right'}}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
                   {filteredRequests.map(req => (
                     <tr key={req.id} style={{transition:'all 0.2s'}}>
                     <td style={{padding:'20px 24px'}}>
@@ -222,7 +226,6 @@ export default function EditRequests() {
               </tbody>
             </table>
             </div>
-          </>
         )}
       </div>
     </div>
