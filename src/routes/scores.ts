@@ -191,8 +191,9 @@ router.post('/:eventId/sets/:setId/reopen', authenticate, requireRole('JUDGE', '
       }
 
 
+      // Check if judge has an active IN_PROGRESS set (only real assignment sets)
       const activeSet = await prisma.judgeSet.findFirst({
-        where: { judgeId: req.user!.userId, status: 'IN_PROGRESS' }
+        where: { judgeId: req.user!.userId, setNumber: { gte: 0 }, status: 'IN_PROGRESS' }
       });
       if (activeSet) {
         return res.status(400).json({ error: 'Cannot edit: you have an active set in progress. Complete it first.' });

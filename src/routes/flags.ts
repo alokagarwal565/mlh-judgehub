@@ -127,18 +127,18 @@ router.put('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireR
         });
 
         if (project?.status === 'FLAGGED') {
-          // Determine appropriate status based on judging progress
+          // Determine appropriate status based on judging progress (only real assignment sets)
           const completedSets = await prisma.judgeSetProject.count({
             where: {
               projectId: flag.projectId,
-              set: { status: 'COMPLETED' }
+              set: { setNumber: { gte: 0 }, status: 'COMPLETED' }
             }
           });
 
           const assignedSets = await prisma.judgeSetProject.count({
             where: {
               projectId: flag.projectId,
-              set: { status: { in: ['IN_PROGRESS', 'COMPLETED'] } }
+              set: { setNumber: { gte: 0 }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } }
             }
           });
 

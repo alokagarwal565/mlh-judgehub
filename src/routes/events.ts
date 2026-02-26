@@ -172,20 +172,7 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
 
     const teamUserIds = projects.map(p => p.teamId);
     const judgeUserIds = judgeSets.map(js => js.judgeId).filter(Boolean) as string[];
-
-    // NEW: Find sample judges and teams by their stable domains
-    const sampleUsers = await prisma.user.findMany({
-      where: {
-        role: { in: ['JUDGE', 'TEAM'] },
-        OR: [
-          { email: { endsWith: '@mlh.sample' } },
-          { email: { endsWith: '@team.sample' } }
-        ]
-      },
-      select: { id: true }
-    });
-    const sampleUserIds = sampleUsers.map(u => u.id);
-    const userIdsToDelete = [...new Set([...teamUserIds, ...judgeUserIds, ...sampleUserIds])];
+    const userIdsToDelete = [...new Set([...teamUserIds, ...judgeUserIds])];
 
     // 3. Delete the event and all associated records
     // We do manual cleanup for problematic intermediate tables that lack Project-side cascades
@@ -195,7 +182,10 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
     await prisma.score.deleteMany({ where: { set: { eventId: id } } });
     await prisma.judgeSetProject.deleteMany({ where: { set: { eventId: id } } });
     
-    // Now safe to delete event (it will cascade to Projects, Tracks, JudgeSets, and AuditLogs)
+    // Explicitly delete all projects associated with this event (before deleting users due to FK constraints)
+    await prisma.project.deleteMany({ where: { eventId: id } });
+    
+    // Now safe to delete event (it will cascade to Tracks, JudgeSets, and AuditLogs)
     await prisma.event.delete({ where: { id } });
 
     // 4. Cleanup associated users

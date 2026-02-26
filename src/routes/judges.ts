@@ -12,7 +12,10 @@ const router = Router();
 router.get('/:eventId/judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const judges = await prisma.user.findMany({
-      where: { role: 'JUDGE' },
+      where: { 
+        role: 'JUDGE',
+        judgeSets: { some: { eventId: req.params.eventId } }
+      },
       select: {
         id: true,
         name: true,
@@ -33,16 +36,18 @@ router.get('/:eventId/judges', authenticate, requireActiveEvent, requireRole('AD
     });
 
     const result = judges.map(j => {
-      const completedSets = j.judgeSets.filter(s => s.status === 'COMPLETED').length;
-      const inProgressSets = j.judgeSets.filter(s => s.status === 'IN_PROGRESS').length;
-      const allScores = j.judgeSets.flatMap(s => s.scores);
+      // Filter out placeholder sets (setNumber: -1) - only count real assignments (setNumber >= 0)
+      const realSets = j.judgeSets.filter(s => s.setNumber >= 0);
+      const completedSets = realSets.filter(s => s.status === 'COMPLETED').length;
+      const inProgressSets = realSets.filter(s => s.status === 'IN_PROGRESS').length;
+      const allScores = realSets.flatMap(s => s.scores);
       const totalTimeSeconds = allScores.reduce((sum, sc) => sum + (sc.timeSpentSeconds || 0), 0);
       const scoredCount = allScores.length;
       const avgTimePerProjectSeconds = scoredCount > 0 ? Math.round(totalTimeSeconds / scoredCount) : 0;
 
       return {
         ...j,
-        totalSets: j.judgeSets.length,
+        totalSets: realSets.length,
         completedSets,
         inProgressSets,
         totalTimeSeconds,
@@ -60,6 +65,7 @@ router.get('/:eventId/judges', authenticate, requireActiveEvent, requireRole('AD
 router.post('/:eventId/judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
+    const { eventId } = req.params;
     if (!name || !email || !phone) return res.status(400).json({ error: 'Name, email, and phone are required' });
 
     let user = await prisma.user.findUnique({ where: { email } });
@@ -74,6 +80,25 @@ router.post('/:eventId/judges', authenticate, requireActiveEvent, requireRole('A
         data: { name, phone }
       });
     }
+
+    // Bind judge to this event - create initial UNASSIGNED JudgeSet
+    // Use setNumber: -1 to indicate placeholder (not a real set or tie breaker)
+    const existingSet = await prisma.judgeSet.findFirst({
+      where: { eventId, judgeId: user.id }
+    });
+    
+    if (!existingSet) {
+      await prisma.judgeSet.create({
+        data: {
+          eventId,
+          judgeId: user.id,
+          status: 'UNASSIGNED',
+          column: -1,
+          setNumber: -1
+        }
+      });
+    }
+
     res.status(201).json(user);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -122,6 +147,7 @@ router.delete('/:eventId/judges/:id', authenticate, requireActiveEvent, requireR
 router.post('/:eventId/judges/import', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { csvData } = req.body;
+    const { eventId } = req.params;
     if (!csvData) return res.status(400).json({ error: 'csvData is required' });
 
     const records = parse(csvData, { columns: true, skip_empty_lines: true, trim: true });
@@ -154,6 +180,24 @@ router.post('/:eventId/judges/import', authenticate, requireActiveEvent, require
           data: {
             name: judgeName,
             phone: judgePhone
+          }
+        });
+      }
+
+      // Bind judge to this event - create initial UNASSIGNED JudgeSet
+      // Use setNumber: -1 to indicate placeholder (not a real set or tie breaker)
+      const existingSet = await prisma.judgeSet.findFirst({
+        where: { eventId, judgeId: user.id }
+      });
+      
+      if (!existingSet) {
+        await prisma.judgeSet.create({
+          data: {
+            eventId,
+            judgeId: user.id,
+            status: 'UNASSIGNED',
+            column: -1,
+            setNumber: -1
           }
         });
       }

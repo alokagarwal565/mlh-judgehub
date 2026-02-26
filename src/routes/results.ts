@@ -58,7 +58,7 @@ router.post('/:eventId/results/rejudge', authenticate, requireActiveEvent, requi
     // For load balancing: Get the number of completed sets for each judge
     const judgeStats = await prisma.judgeSet.groupBy({
       by: ['judgeId'],
-      where: { status: 'COMPLETED', judgeId: { not: null } },
+      where: { eventId: req.params.eventId, status: 'COMPLETED', judgeId: { not: null } },
       _count: { _all: true }
     });
     const completedCounts: Record<string, number> = {};
@@ -66,7 +66,12 @@ router.post('/:eventId/results/rejudge', authenticate, requireActiveEvent, requi
       if (stat.judgeId) completedCounts[stat.judgeId] = stat._count._all;
     });
 
-    const allJudges = await prisma.user.findMany({ where: { role: 'JUDGE' } });
+    const allJudges = await prisma.user.findMany({ 
+      where: { 
+        role: 'JUDGE',
+        judgeSets: { some: { eventId: req.params.eventId } }
+      }
+    });
     const assignments = [];
     for (const group of tiedGroups) {
       // Find judges who haven't scored any of these projects
@@ -131,10 +136,11 @@ router.get('/:eventId/projects/:projectId/details', authenticate, requireActiveE
   try {
     const { eventId, projectId } = req.params;
 
+    // Only fetch evaluations from real assignment sets (setNumber >= 0), not placeholder sets
     const evaluations = await prisma.judgeSetProject.findMany({
       where: { 
         projectId,
-        set: { eventId }
+        set: { eventId, setNumber: { gte: 0 } }
       },
       include: {
         set: {

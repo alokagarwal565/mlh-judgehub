@@ -47,11 +47,14 @@ export async function createSampleData(options: { wipeExisting?: boolean } = {})
     { name: 'Dr. Robert Brown',  email: 'robert.brown@mlh.sample',  phone: '+1-555-0106' },
   ];
 
+  const judges = [];
+
   for (const j of judgeData) {
     const hash = await bcrypt.hash('judge123', 10);
-    await prisma.user.create({
+    const judge = await prisma.user.create({
       data: { name: j.name, email: j.email, phone: j.phone, passwordHash: hash, passwordPlain: 'judge123', role: 'JUDGE' }
     });
+    judges.push(judge);
   }
 
   // ── Event ────────────────────────────────────────────────
@@ -64,6 +67,21 @@ export async function createSampleData(options: { wipeExisting?: boolean } = {})
       status: 'SETUP'
     }
   });
+
+  // ── Bind judges to event ──────────────────────────────────
+  // Create placeholder JudgeSet records with setNumber: -1 for each judge
+  // Real sets will be created when "Generate Sets" is clicked
+  for (const judge of judges) {
+    await prisma.judgeSet.create({
+      data: {
+        eventId: event.id,
+        judgeId: judge.id,
+        status: 'UNASSIGNED',
+        column: -1,
+        setNumber: -1
+      }
+    });
+  }
 
   // ── Tracks ───────────────────────────────────────────────
   const trackData = [

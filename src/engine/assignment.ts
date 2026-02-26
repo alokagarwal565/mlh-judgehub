@@ -21,19 +21,19 @@ export async function updateProjectJudgingStatus(projectId: string): Promise<voi
   // Never overwrite manually-set terminal statuses
   if (project.status === 'FLAGGED' || project.status === 'SCORED') return;
 
-  // Count completed evaluations (distinct COMPLETED sets containing this project)
+  // Count completed evaluations (distinct COMPLETED sets containing this project, only real assignment sets)
   const completedCount = await prisma.judgeSetProject.count({
     where: {
       projectId,
-      set: { status: 'COMPLETED' }
+      set: { setNumber: { gte: 0 }, status: 'COMPLETED' }
     }
   });
 
-  // Count total assigned evaluations (IN_PROGRESS + COMPLETED)
+  // Count total assigned evaluations (IN_PROGRESS + COMPLETED, only real assignment sets)
   const assignedCount = await prisma.judgeSetProject.count({
     where: {
       projectId,
-      set: { status: { in: ['IN_PROGRESS', 'COMPLETED'] } }
+      set: { setNumber: { gte: 0 }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } }
     }
   });
 
@@ -118,8 +118,8 @@ export async function createSetsForEvent(eventId: string): Promise<number> {
 
   if (projects.length === 0) throw new Error('No projects in this event');
 
-  // Delete existing sets for this event
-  await prisma.judgeSet.deleteMany({ where: { eventId } });
+  // Delete existing assignment sets for this event (but preserve placeholder sets with setNumber: -1)
+  await prisma.judgeSet.deleteMany({ where: { eventId, setNumber: { gte: 0 } } });
 
   const columns = generateSetColumns(projects, event.setSize);
   let totalSets = 0;
@@ -156,7 +156,7 @@ export async function createSetsForEvent(eventId: string): Promise<number> {
   // The set itself remains intact — only this one project is removed from it.
 
   const allMemberships = await prisma.judgeSetProject.findMany({
-    where: { set: { eventId } },
+    where: { set: { eventId, setNumber: { gte: 0 } } },
     include: { set: { select: { setNumber: true, column: true } } },
     orderBy: [
       { set: { setNumber: 'asc' } },
@@ -204,11 +204,12 @@ export async function assignNextSetToJudge(
   eventId: string,
   judgeId: string
 ): Promise<string | null> {
-  // Get all project IDs this judge has already evaluated
+  // Get all project IDs this judge has already evaluated (only real assignment sets)
   const previousSets = await prisma.judgeSet.findMany({
     where: {
       eventId,
       judgeId,
+      setNumber: { gte: 0 },
       status: { in: ['IN_PROGRESS', 'COMPLETED'] }
     },
     include: { projects: true }
@@ -221,10 +222,11 @@ export async function assignNextSetToJudge(
     }
   }
 
-  // Find unassigned sets where NO project overlaps with judge's history
+  // Find unassigned sets where NO project overlaps with judge's history (only real assignment sets)
   const unassignedSets = await prisma.judgeSet.findMany({
     where: {
       eventId,
+      setNumber: { gte: 0 },
       status: 'UNASSIGNED'
     },
     include: { projects: true }
@@ -233,12 +235,13 @@ export async function assignNextSetToJudge(
   if (unassignedSets.length === 0) return null;
 
   // Smart Priority: Pick set with lowest average evaluation count for its projects
-  // Count evaluations (Completed + In Progress) for each project in this event
+  // Count evaluations (Completed + In Progress) for each project in this event (only real assignment sets)
   const assignmentCounts = await prisma.judgeSetProject.groupBy({
     by: ['projectId'],
     where: {
       set: {
         eventId,
+        setNumber: { gte: 0 },
         status: { in: ['IN_PROGRESS', 'COMPLETED'] }
       }
     },
@@ -292,13 +295,19 @@ export async function assignNextSetToJudge(
  * High-level initialization: Generate sets, update status, and assign first sets.
  */
 export async function initializeEventJudging(eventId: string) {
-  const [projectsCount, judgesCount] = await Promise.all([
+  // Only count judges bound to this event (those with JudgeSets in this event)
+  const [projectsCount, eventJudges] = await Promise.all([
     prisma.project.count({ where: { eventId } }),
-    prisma.user.count({ where: { role: 'JUDGE' } })
+    prisma.user.findMany({ 
+      where: { 
+        role: 'JUDGE',
+        judgeSets: { some: { eventId } }
+      } 
+    })
   ]);
 
   if (projectsCount === 0) throw new Error('Cannot start: No projects found in this event.');
-  if (judgesCount === 0) throw new Error('Cannot start: No judges found. Please import judges first.');
+  if (eventJudges.length === 0) throw new Error('Cannot start: No judges found in this event. Please import judges first.');
 
   // 1. Generate sets (this deletes old ones)
   await createSetsForEvent(eventId);
@@ -309,23 +318,23 @@ export async function initializeEventJudging(eventId: string) {
     data: { status: 'JUDGING' }
   });
 
-  // 3. Auto-assign first set to all judges
-  const allJudges = await prisma.user.findMany({ where: { role: 'JUDGE' } });
-  for (const judge of allJudges) {
+  // 3. Auto-assign first set to all judges (only those bound to this event)
+  for (const judge of eventJudges) {
     await assignNextSetToJudge(eventId, judge.id);
   }
 
-  return { projectsCount, judgesCount };
+  return { projectsCount, judgesCount: eventJudges.length };
 }
 
 /**
  * Get assignment progress for an event.
  */
 export async function getAssignmentProgress(eventId: string) {
-  const total = await prisma.judgeSet.count({ where: { eventId } });
-  const unassigned = await prisma.judgeSet.count({ where: { eventId, status: 'UNASSIGNED' } });
-  const inProgress = await prisma.judgeSet.count({ where: { eventId, status: 'IN_PROGRESS' } });
-  const completed = await prisma.judgeSet.count({ where: { eventId, status: 'COMPLETED' } });
+  // Only count real assignment sets (setNumber >= 0), not placeholder sets (setNumber: -1)
+  const total = await prisma.judgeSet.count({ where: { eventId, setNumber: { gte: 0 } } });
+  const unassigned = await prisma.judgeSet.count({ where: { eventId, setNumber: { gte: 0 }, status: 'UNASSIGNED' } });
+  const inProgress = await prisma.judgeSet.count({ where: { eventId, setNumber: { gte: 0 }, status: 'IN_PROGRESS' } });
+  const completed = await prisma.judgeSet.count({ where: { eventId, setNumber: { gte: 0 }, status: 'COMPLETED' } });
 
   return { total, unassigned, inProgress, completed };
 }

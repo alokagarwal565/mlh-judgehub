@@ -19,8 +19,9 @@ router.post('/:eventId/assignments', authenticate, requireActiveEvent, requireRo
 // GET /api/events/:eventId/assignments — View all sets with status
 router.get('/:eventId/assignments', authenticate, requireActiveEvent, async (req, res) => {
   try {
+    // Only fetch real assignment sets (setNumber >= 0), not placeholder sets (setNumber: -1)
     const sets = await prisma.judgeSet.findMany({
-      where: { eventId: req.params.eventId },
+      where: { eventId: req.params.eventId, setNumber: { gte: 0 } },
       include: {
         judge: { select: { id: true, name: true, phone: true } },
         projects: {
@@ -78,9 +79,9 @@ router.post('/:eventId/assignments/next', authenticate, requireActiveEvent, requ
   try {
     const judgeId = req.user!.userId;
 
-    // Validation: Cannot have more than one IN_PROGRESS set
+    // Validation: Cannot have more than one IN_PROGRESS set (only real assignment sets)
     const activeSet = await prisma.judgeSet.findFirst({
-      where: { judgeId, status: 'IN_PROGRESS' }
+      where: { judgeId, setNumber: { gte: 0 }, status: 'IN_PROGRESS' }
     });
 
     if (activeSet) {
@@ -119,10 +120,12 @@ router.post('/:eventId/assignments/next', authenticate, requireActiveEvent, requ
 // GET /api/events/:eventId/assignments/my-sets — Judge's assigned sets
 router.get('/:eventId/assignments/my-sets', authenticate, requireActiveEvent, requireRole('JUDGE'), async (req, res) => {
   try {
+    // Only fetch real assignment sets (setNumber >= 0), not placeholder sets
     const sets = await prisma.judgeSet.findMany({
       where: {
         eventId: req.params.eventId,
-        judgeId: req.user!.userId
+        judgeId: req.user!.userId,
+        setNumber: { gte: 0 }
       },
       include: {
         projects: {
@@ -148,10 +151,12 @@ router.get('/:eventId/assignments/my-sets', authenticate, requireActiveEvent, re
 // GET /api/events/:eventId/assignments/judge/:judgeId — Admin view's a judge's assigned sets
 router.get('/:eventId/assignments/judge/:judgeId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
+    // Only fetch real assignment sets (setNumber >= 0), not placeholder sets
     const sets = await prisma.judgeSet.findMany({
       where: {
         eventId: req.params.eventId,
-        judgeId: req.params.judgeId
+        judgeId: req.params.judgeId,
+        setNumber: { gte: 0 }
       },
       include: {
         projects: {
@@ -181,7 +186,10 @@ router.get('/:eventId/assignments/idle-judges', authenticate, requireActiveEvent
     const { eventId } = req.params;
 
     const allJudges = await prisma.user.findMany({
-      where: { role: 'JUDGE' },
+      where: { 
+        role: 'JUDGE',
+        judgeSets: { some: { eventId } }
+      },
       select: {
         id: true, name: true, email: true, phone: true,
         judgeSets: {
@@ -196,10 +204,12 @@ router.get('/:eventId/assignments/idle-judges', authenticate, requireActiveEvent
 
     // An idle judge has no IN_PROGRESS set right now
     const idleJudges = allJudges.map(j => {
+      // Filter out placeholder sets (setNumber: -1) - only count real assignments (setNumber >= 0)
+      const realSets = j.judgeSets.filter(s => s.setNumber >= 0);
       let recentLocation = null;
       
       // Find the "most recently finished" thing in this event
-      const completedSets = j.judgeSets.filter(s => s.status === 'COMPLETED');
+      const completedSets = realSets.filter(s => s.status === 'COMPLETED');
       if (completedSets.length > 0) {
         const lastSet = completedSets.sort((a, b) => b.setNumber - a.setNumber)[0];
         const lastProject = lastSet.projects[lastSet.projects.length - 1]; // Last by sort order
@@ -212,17 +222,19 @@ router.get('/:eventId/assignments/idle-judges', authenticate, requireActiveEvent
         email: j.email,
         phone: j.phone,
         recentLocation,
-        totalSets: j.judgeSets.length,
-        completedSets: j.judgeSets.filter(s => s.status === 'COMPLETED').length,
-        isIdle: !j.judgeSets.some(s => s.status === 'IN_PROGRESS'),
+        totalSets: realSets.length,
+        completedSets: realSets.filter(s => s.status === 'COMPLETED').length,
+        isIdle: !realSets.some(s => s.status === 'IN_PROGRESS'),
         evaluatedProjectIds: [] as string[]
       };
     });
 
-    // Fetch evaluated project IDs for each judge for overlap checking on the frontend
-    const judgeIds = idleJudges.filter(j => j.isIdle).map(j => j.id);
+    // Fetch evaluated project IDs for ALL judges for overlap checking on the frontend
+    // This ensures even busy judges show correct overlap detection
+    // Only include real assignment sets (setNumber >= 0), not placeholder sets
+    const judgeIds = idleJudges.map(j => j.id);
     const evalData = await prisma.judgeSetProject.findMany({
-      where: { set: { eventId, judgeId: { in: judgeIds }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } } },
+      where: { set: { eventId, setNumber: { gte: 0 }, judgeId: { in: judgeIds }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } } },
       select: { projectId: true, set: { select: { judgeId: true } } }
     });
     const evalMap: Record<string, Set<string>> = {};
@@ -259,9 +271,9 @@ router.post('/:eventId/assignments/manual-assign', authenticate, requireActiveEv
     if (!set) return res.status(404).json({ error: 'Set not found' });
     if (set.status !== 'UNASSIGNED') return res.status(409).json({ error: `Set is already ${set.status}` });
 
-    // Check for project overlap with this judge's history
+    // Check for project overlap with this judge's history (only real assignment sets)
     const previousSets = await prisma.judgeSet.findMany({
-      where: { eventId, judgeId, status: { in: ['IN_PROGRESS', 'COMPLETED'] } },
+      where: { eventId, judgeId, setNumber: { gte: 0 }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } },
       include: { projects: { select: { projectId: true } } }
     });
     const evaluated = new Set(previousSets.flatMap(s => s.projects.map(p => p.projectId)));
