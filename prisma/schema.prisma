@@ -9,227 +9,222 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id                 String              @id @default(uuid())
-  name               String
-  email              String              @unique
-  passwordHash       String              @map("password_hash")
-  role               Role
-  createdAt          DateTime            @default(now()) @map("created_at")
-  phone              String?
-  auditLogs          AuditLog[]
-  feedback           Feedback[]
-  flagsCreated       Flag[]              @relation("FlagCreator")
-  judgeSets          JudgeSet[]
-  projects           Project[]
-  rejudgeAssignments RejudgeAssignment[]
-  scores             Score[]
-  stackRankVotes     StackRankVote[]
-  trackNominations   TrackNomination[]
-
-  @@map("users")
+model audit_logs {
+  id          String   @id
+  user_id     String
+  action      String
+  entity_type String
+  entity_id   String
+  details     String?
+  created_at  DateTime @default(now())
+  users       users    @relation(fields: [user_id], references: [id])
 }
 
-model Event {
-  id                 String              @id @default(uuid())
-  name               String
-  description        String?
-  startDate          DateTime?           @map("start_date")
-  endDate            DateTime?           @map("end_date")
-  timePerProject     Int                 @default(180) @map("time_per_project")
-  setSize            Int                 @default(5) @map("set_size")
-  status             EventStatus         @default(SETUP)
-  createdAt          DateTime            @default(now()) @map("created_at")
-  flags              Flag[]
-  judgeSets          JudgeSet[]
-  projects           Project[]
-  rejudgeAssignments RejudgeAssignment[]
-  tracks             Track[]
-
-  @@map("events")
-}
-
-model Track {
-  id          String            @id @default(uuid())
-  eventId     String            @map("event_id")
-  name        String
-  description String?
-  color       String            @default("#3B82F6")
-  nominations TrackNomination[]
-  event       Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@map("tracks")
-}
-
-model Project {
-  id               String            @id @default(uuid())
-  eventId          String            @map("event_id")
-  teamId           String            @map("team_id")
-  title            String
-  description      String?
-  demoLink         String?           @map("demo_link")
-  videoUrl         String?           @map("video_url")
-  roomNumber       String?           @map("room_number")
-  teamNumber       String?           @map("team_number")
-  leaderName       String?           @map("leader_name")
-  status           ProjectStatus     @default(SUBMITTED)
-  createdAt        DateTime          @default(now()) @map("created_at")
-  feedback         Feedback[]
-  flags            Flag[]
-  judgeSetProjects JudgeSetProject[]
-  event            Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team             User              @relation(fields: [teamId], references: [id])
-  scores           Score[]
-  stackRankVotes   StackRankVote[]
-  trackNominations TrackNomination[]
-
-  @@map("projects")
-}
-
-model JudgeSet {
-  id             String            @id @default(uuid())
-  eventId        String            @map("event_id")
-  judgeId        String?           @map("judge_id")
-  column         Int
-  setNumber      Int               @map("set_number")
-  status         SetStatus         @default(UNASSIGNED)
-  createdAt      DateTime          @default(now()) @map("created_at")
-  feedback       Feedback[]
-  projects       JudgeSetProject[]
-  event          Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  judge          User?             @relation(fields: [judgeId], references: [id])
-  scores         Score[]
-  stackRankVotes StackRankVote[]
-  nominations    TrackNomination[]
-
-  @@map("judge_sets")
-}
-
-model JudgeSetProject {
-  id        String   @id @default(uuid())
-  setId     String   @map("set_id")
-  projectId String   @map("project_id")
-  sortOrder Int      @map("sort_order")
-  project   Project  @relation(fields: [projectId], references: [id])
-  set       JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-
-  @@unique([setId, projectId])
-  @@map("judge_set_projects")
-}
-
-model Score {
-  id               String   @id @default(uuid())
-  setId            String   @map("set_id")
-  projectId        String   @map("project_id")
-  judgeId          String   @map("judge_id")
-  completion       Int
-  originality      Int
-  learning         Int
-  design           Int
-  technology       Int
-  total            Int
-  timeSpentSeconds Int      @default(0) @map("time_spent_seconds")
-  createdAt        DateTime @default(now()) @map("created_at")
-  judge            User     @relation(fields: [judgeId], references: [id])
-  project          Project  @relation(fields: [projectId], references: [id])
-  set              JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-
-  @@unique([setId, projectId, judgeId])
-  @@map("scores")
-}
-
-model Feedback {
-  id        String   @id @default(uuid())
-  setId     String   @map("set_id")
-  projectId String   @map("project_id")
-  judgeId   String   @map("judge_id")
-  comment   String
-  createdAt DateTime @default(now()) @map("created_at")
-  judge     User     @relation(fields: [judgeId], references: [id])
-  project   Project  @relation(fields: [projectId], references: [id])
-  set       JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-
-  @@map("feedbacks")
-}
-
-model TrackNomination {
-  id        String   @id @default(uuid())
-  setId     String   @map("set_id")
-  projectId String   @map("project_id")
-  judgeId   String   @map("judge_id")
-  trackId   String   @map("track_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  judge     User     @relation(fields: [judgeId], references: [id])
-  project   Project  @relation(fields: [projectId], references: [id])
-  set       JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-  track     Track    @relation(fields: [trackId], references: [id])
-
-  @@unique([setId, projectId, judgeId, trackId])
-  @@map("track_nominations")
-}
-
-model StackRankVote {
-  id        String   @id @default(uuid())
-  setId     String   @map("set_id")
-  judgeId   String   @map("judge_id")
-  projectId String   @map("project_id")
-  rank      Int
-  points    Int
-  createdAt DateTime @default(now()) @map("created_at")
-  judge     User     @relation(fields: [judgeId], references: [id])
-  project   Project  @relation(fields: [projectId], references: [id])
-  set       JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-
-  @@unique([setId, judgeId, rank])
-  @@map("stack_rank_votes")
-}
-
-model RejudgeAssignment {
-  id             String        @id @default(uuid())
-  eventId        String        @map("event_id")
-  judgeId        String        @map("judge_id")
-  tiedProjectIds String        @map("tied_project_ids")
-  status         RejudgeStatus @default(PENDING)
-  createdAt      DateTime      @default(now()) @map("created_at")
-  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  judge          User          @relation(fields: [judgeId], references: [id])
-
-  @@map("rejudge_assignments")
-}
-
-model Flag {
-  id         String     @id @default(uuid())
-  eventId    String     @map("event_id")
-  projectId  String     @map("project_id")
-  flaggedBy  String     @map("flagged_by")
+model edit_requests {
+  id         String            @id
+  set_id     String
+  judge_id   String
   reason     String
-  status     FlagStatus @default(OPEN)
-  adminNotes String?    @map("admin_notes")
-  createdAt  DateTime   @default(now()) @map("created_at")
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  creator    User       @relation("FlagCreator", fields: [flaggedBy], references: [id])
-  project    Project    @relation(fields: [projectId], references: [id])
-
-  @@map("flags")
+  status     EditRequestStatus @default(PENDING)
+  created_at DateTime          @default(now())
+  updated_at DateTime
+  users      users             @relation(fields: [judge_id], references: [id])
+  judge_sets judge_sets        @relation(fields: [set_id], references: [id], onDelete: Cascade)
 }
 
-model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String   @map("user_id")
-  action     String
-  entityType String   @map("entity_type")
-  entityId   String   @map("entity_id")
-  details    String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  user       User     @relation(fields: [userId], references: [id])
-
-  @@map("audit_logs")
+model events {
+  id                  String                @id
+  name                String
+  description         String?
+  start_date          DateTime?
+  end_date            DateTime?
+  time_per_project    Int                   @default(180)
+  set_size            Int                   @default(5)
+  status              EventStatus           @default(SETUP)
+  created_at          DateTime              @default(now())
+  is_active           Boolean               @default(false)
+  flags               flags[]
+  judge_sets          judge_sets[]
+  projects            projects[]
+  rejudge_assignments rejudge_assignments[]
+  tracks              tracks[]
 }
 
-enum Role {
-  ADMIN
-  JUDGE
-  TEAM
+model feedbacks {
+  id         String     @id
+  set_id     String
+  project_id String
+  judge_id   String
+  comment    String
+  created_at DateTime   @default(now())
+  users      users      @relation(fields: [judge_id], references: [id])
+  projects   projects   @relation(fields: [project_id], references: [id])
+  judge_sets judge_sets @relation(fields: [set_id], references: [id], onDelete: Cascade)
+}
+
+model flags {
+  id          String     @id
+  event_id    String
+  project_id  String
+  flagged_by  String
+  reason      String
+  status      FlagStatus @default(OPEN)
+  admin_notes String?
+  created_at  DateTime   @default(now())
+  events      events     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  users       users      @relation(fields: [flagged_by], references: [id])
+  projects    projects   @relation(fields: [project_id], references: [id])
+}
+
+model judge_set_projects {
+  id         String     @id
+  set_id     String
+  project_id String
+  sort_order Int
+  projects   projects   @relation(fields: [project_id], references: [id])
+  judge_sets judge_sets @relation(fields: [set_id], references: [id], onDelete: Cascade)
+
+  @@unique([set_id, project_id])
+}
+
+model judge_sets {
+  id                 String               @id
+  event_id           String
+  judge_id           String?
+  column             Int
+  set_number         Int
+  status             SetStatus            @default(UNASSIGNED)
+  created_at         DateTime             @default(now())
+  edit_requests      edit_requests[]
+  feedbacks          feedbacks[]
+  judge_set_projects judge_set_projects[]
+  events             events               @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  users              users?               @relation(fields: [judge_id], references: [id])
+  scores             scores[]
+  stack_rank_votes   stack_rank_votes[]
+  track_nominations  track_nominations[]
+}
+
+model projects {
+  id                 String               @id
+  event_id           String
+  team_id            String
+  title              String
+  description        String?
+  demo_link          String?
+  video_url          String?
+  room_number        String?
+  team_number        String?
+  leader_name        String?
+  status             ProjectStatus        @default(SUBMITTED)
+  created_at         DateTime             @default(now())
+  feedbacks          feedbacks[]
+  flags              flags[]
+  judge_set_projects judge_set_projects[]
+  events             events               @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  users              users                @relation(fields: [team_id], references: [id])
+  scores             scores[]
+  stack_rank_votes   stack_rank_votes[]
+  track_nominations  track_nominations[]
+}
+
+model rejudge_assignments {
+  id               String        @id
+  event_id         String
+  judge_id         String
+  tied_project_ids String
+  status           RejudgeStatus @default(PENDING)
+  created_at       DateTime      @default(now())
+  events           events        @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  users            users         @relation(fields: [judge_id], references: [id])
+}
+
+model scores {
+  id                 String     @id
+  set_id             String
+  project_id         String
+  judge_id           String
+  completion         Int
+  originality        Int
+  learning           Int
+  design             Int
+  technology         Int
+  total              Int
+  created_at         DateTime   @default(now())
+  time_spent_seconds Int        @default(0)
+  users              users      @relation(fields: [judge_id], references: [id])
+  projects           projects   @relation(fields: [project_id], references: [id])
+  judge_sets         judge_sets @relation(fields: [set_id], references: [id], onDelete: Cascade)
+
+  @@unique([set_id, project_id, judge_id])
+}
+
+model stack_rank_votes {
+  id         String     @id
+  set_id     String
+  judge_id   String
+  project_id String
+  rank       Int
+  points     Int
+  created_at DateTime   @default(now())
+  users      users      @relation(fields: [judge_id], references: [id])
+  projects   projects   @relation(fields: [project_id], references: [id])
+  judge_sets judge_sets @relation(fields: [set_id], references: [id], onDelete: Cascade)
+
+  @@unique([set_id, judge_id, rank])
+}
+
+model track_nominations {
+  id         String     @id
+  set_id     String
+  project_id String
+  judge_id   String
+  track_id   String
+  created_at DateTime   @default(now())
+  users      users      @relation(fields: [judge_id], references: [id])
+  projects   projects   @relation(fields: [project_id], references: [id])
+  judge_sets judge_sets @relation(fields: [set_id], references: [id], onDelete: Cascade)
+  tracks     tracks     @relation(fields: [track_id], references: [id])
+
+  @@unique([set_id, project_id, judge_id, track_id])
+}
+
+model tracks {
+  id                String              @id
+  event_id          String
+  name              String
+  description       String?
+  color             String              @default("#3B82F6")
+  track_nominations track_nominations[]
+  events            events              @relation(fields: [event_id], references: [id], onDelete: Cascade)
+}
+
+model users {
+  id                  String                @id
+  name                String
+  email               String                @unique
+  password_hash       String
+  role                Role
+  created_at          DateTime              @default(now())
+  phone               String?
+  password_plain      String?
+  audit_logs          audit_logs[]
+  edit_requests       edit_requests[]
+  feedbacks           feedbacks[]
+  flags               flags[]
+  judge_sets          judge_sets[]
+  projects            projects[]
+  rejudge_assignments rejudge_assignments[]
+  scores              scores[]
+  stack_rank_votes    stack_rank_votes[]
+  track_nominations   track_nominations[]
+}
+
+enum EditRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+  USED
 }
 
 enum EventStatus {
@@ -238,28 +233,34 @@ enum EventStatus {
   COMPLETED
 }
 
-enum SetStatus {
-  UNASSIGNED
-  IN_PROGRESS
-  COMPLETED
-}
-
-enum ProjectStatus {
-  SUBMITTED
-  UNDER_REVIEW
-  IN_JUDGING
-  JUDGING_COMPLETE
-  FLAGGED
-  SCORED
-}
-
 enum FlagStatus {
   OPEN
   REVIEWED
   DISMISSED
 }
 
+enum ProjectStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  FLAGGED
+  SCORED
+  IN_JUDGING
+  JUDGING_COMPLETE
+}
+
 enum RejudgeStatus {
   PENDING
+  COMPLETED
+}
+
+enum Role {
+  ADMIN
+  JUDGE
+  TEAM
+}
+
+enum SetStatus {
+  UNASSIGNED
+  IN_PROGRESS
   COMPLETED
 }

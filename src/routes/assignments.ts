@@ -21,20 +21,42 @@ router.get('/:eventId/assignments', authenticate, async (req, res) => {
     const sets = await prisma.judgeSet.findMany({
       where: { eventId: req.params.eventId },
       include: {
-        judge: { select: { id: true, name: true } },
+        judge: { select: { id: true, name: true, phone: true } },
         projects: {
           include: { 
             project: { 
-              include: { team: { select: { id: true, name: true, phone: true } } } 
+              select: { id: true, title: true, roomNumber: true, teamNumber: true, team: { select: { name: true } } }
             } 
           },
           orderBy: { sortOrder: 'asc' }
         },
-        scores: { select: { timeSpentSeconds: true } }
+        scores: { select: { projectId: true, timeSpentSeconds: true } }
       },
       orderBy: [{ column: 'asc' }, { setNumber: 'asc' }]
     });
-    res.json(sets);
+
+    // Enriched response for judge recent tracking
+    const enriched = sets.map(set => {
+      let recentLocation = null;
+      if ((set.status === 'IN_PROGRESS' || set.status === 'COMPLETED') && set.projects.length > 0) {
+        const scoredIds = new Set(set.scores.map(s => s.projectId));
+        const projects = set.projects.map(p => p.project);
+        
+        // Find first project without score (current/next)
+        const nextProject = projects.find(p => !scoredIds.has(p.id));
+        
+        if (nextProject && set.status === 'IN_PROGRESS') {
+          recentLocation = nextProject.roomNumber || 'Unknown';
+        } else {
+          // Find last project with score
+          const lastProject = [...projects].reverse().find(p => scoredIds.has(p.id));
+          recentLocation = lastProject?.roomNumber || 'Finished';
+        }
+      }
+      return { ...set, recentLocation };
+    });
+
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -53,7 +75,18 @@ router.get('/:eventId/assignments/progress', authenticate, async (req, res) => {
 // POST /api/events/:eventId/assignments/next — Judge requests next set
 router.post('/:eventId/assignments/next', authenticate, requireRole('JUDGE'), async (req, res) => {
   try {
-    const setId = await assignNextSetToJudge(req.params.eventId, req.user!.userId);
+    const judgeId = req.user!.userId;
+
+    // Validation: Cannot have more than one IN_PROGRESS set
+    const activeSet = await prisma.judgeSet.findFirst({
+      where: { judgeId, status: 'IN_PROGRESS' }
+    });
+
+    if (activeSet) {
+      return res.status(400).json({ error: 'You already have a set in progress. Complete it before requesting a new one.' });
+    }
+
+    const setId = await assignNextSetToJudge(req.params.eventId, judgeId);
     if (!setId) {
       return res.json({ message: 'No more sets available', set: null });
     }
@@ -100,7 +133,8 @@ router.get('/:eventId/assignments/my-sets', authenticate, requireRole('JUDGE'), 
           orderBy: { sortOrder: 'asc' }
         },
         scores: true,
-        stackRankVotes: true
+        stackRankVotes: true,
+        editRequests: { orderBy: { createdAt: 'desc' }, take: 1 }
       },
       orderBy: { createdAt: 'asc' }
     });
@@ -128,7 +162,8 @@ router.get('/:eventId/assignments/judge/:judgeId', authenticate, requireRole('AD
           orderBy: { sortOrder: 'asc' }
         },
         scores: true,
-        stackRankVotes: true
+        stackRankVotes: true,
+        editRequests: { orderBy: { createdAt: 'desc' }, take: 1 }
       },
       orderBy: { createdAt: 'asc' }
     });
@@ -147,25 +182,41 @@ router.get('/:eventId/assignments/idle-judges', authenticate, requireRole('ADMIN
     const allJudges = await prisma.user.findMany({
       where: { role: 'JUDGE' },
       select: {
-        id: true, name: true, email: true,
+        id: true, name: true, email: true, phone: true,
         judgeSets: {
           where: { eventId },
-          select: { id: true, status: true, column: true, setNumber: true }
+          include: { 
+            projects: { include: { project: { select: { roomNumber: true } } } },
+            scores: { select: { projectId: true } }
+          }
         }
       }
     });
 
     // An idle judge has no IN_PROGRESS set right now
-    const idleJudges = allJudges.map(j => ({
-      id: j.id,
-      name: j.name,
-      email: j.email,
-      totalSets: j.judgeSets.length,
-      completedSets: j.judgeSets.filter(s => s.status === 'COMPLETED').length,
-      isIdle: !j.judgeSets.some(s => s.status === 'IN_PROGRESS'),
-      // Track which projectIds this judge has already evaluated
-      evaluatedProjectIds: [] as string[]
-    }));
+    const idleJudges = allJudges.map(j => {
+      let recentLocation = null;
+      
+      // Find the "most recently finished" thing in this event
+      const completedSets = j.judgeSets.filter(s => s.status === 'COMPLETED');
+      if (completedSets.length > 0) {
+        const lastSet = completedSets.sort((a, b) => b.setNumber - a.setNumber)[0];
+        const lastProject = lastSet.projects[lastSet.projects.length - 1]; // Last by sort order
+        recentLocation = lastProject?.project?.roomNumber || null;
+      }
+
+      return {
+        id: j.id,
+        name: j.name,
+        email: j.email,
+        phone: j.phone,
+        recentLocation,
+        totalSets: j.judgeSets.length,
+        completedSets: j.judgeSets.filter(s => s.status === 'COMPLETED').length,
+        isIdle: !j.judgeSets.some(s => s.status === 'IN_PROGRESS'),
+        evaluatedProjectIds: [] as string[]
+      };
+    });
 
     // Fetch evaluated project IDs for each judge for overlap checking on the frontend
     const judgeIds = idleJudges.filter(j => j.isIdle).map(j => j.id);

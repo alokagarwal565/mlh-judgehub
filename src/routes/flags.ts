@@ -6,12 +6,12 @@ import { runIntegrityChecks } from '../engine/integrity.js';
 const router = Router();
 
 // GET /api/events/:eventId/flags
-router.get('/:eventId/flags', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/flags', authenticate, async (req, res) => {
   try {
     const flags = await prisma.flag.findMany({
       where: { eventId: req.params.eventId },
       include: {
-        project: { select: { title: true, roomNumber: true } },
+        project: { select: { title: true, roomNumber: true, teamNumber: true, team: { select: { name: true } } } },
         creator: { select: { name: true, role: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -43,6 +43,7 @@ router.post('/:eventId/flags', authenticate, async (req, res) => {
 
     const io = req.app.get('io');
     io.emit('flag:created', {
+      eventId: req.params.eventId,
       flagId: flag.id,
       projectId,
       reason,
@@ -50,6 +51,49 @@ router.post('/:eventId/flags', authenticate, async (req, res) => {
     });
 
     res.status(201).json(flag);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/events/:eventId/flags/:flagId/edit-reason — Judges can edit their own flag's reason
+router.put('/:eventId/flags/:flagId/edit-reason', authenticate, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    
+    // Check if flag exists and belongs to this judge or was raised by this judge
+    const flag = await prisma.flag.findUnique({
+      where: { id: req.params.flagId }
+    });
+
+    if (!flag) {
+      return res.status(404).json({ error: 'Flag not found' });
+    }
+
+    // Only allow judge to edit if they raised the flag AND it's still open/reviewed
+    if (flag.flaggedBy !== req.user!.userId) {
+      return res.status(403).json({ error: 'You can only edit your own flags' });
+    }
+
+    if (flag.status !== 'OPEN' && flag.status !== 'REVIEWED') {
+      return res.status(400).json({ error: 'Cannot edit flag after it has been dismissed' });
+    }
+
+    const updatedFlag = await prisma.flag.update({
+      where: { id: req.params.flagId },
+      data: { reason }
+    });
+
+    // Emit socket event for real-time updates
+    const io = req.app.get('io');
+    io.emit('flag:updated', {
+      eventId: req.params.eventId,
+      flagId: updatedFlag.id,
+      projectId: updatedFlag.projectId,
+      status: updatedFlag.status
+    });
+
+    res.json(updatedFlag);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -63,6 +107,64 @@ router.put('/:eventId/flags/:flagId', authenticate, requireRole('ADMIN'), async 
       where: { id: req.params.flagId },
       data: { status, adminNotes }
     });
+
+    // If dismissed, remove FLAGGED status from project (only if no other OPEN flags remain)
+    if (status === 'DISMISSED' && flag.projectId) {
+      const otherOpenFlags = await prisma.flag.count({
+        where: {
+          projectId: flag.projectId,
+          id: { not: flag.id },
+          status: 'OPEN'
+        }
+      });
+
+      // Only remove FLAGGED status if no other open flags AND project is currently FLAGGED
+      if (otherOpenFlags === 0) {
+        const project = await prisma.project.findUnique({
+          where: { id: flag.projectId },
+          select: { status: true }
+        });
+
+        if (project?.status === 'FLAGGED') {
+          // Determine appropriate status based on judging progress
+          const completedSets = await prisma.judgeSetProject.count({
+            where: {
+              projectId: flag.projectId,
+              set: { status: 'COMPLETED' }
+            }
+          });
+
+          const assignedSets = await prisma.judgeSetProject.count({
+            where: {
+              projectId: flag.projectId,
+              set: { status: { in: ['IN_PROGRESS', 'COMPLETED'] } }
+            }
+          });
+
+          let newStatus = 'SUBMITTED';
+          if (completedSets >= 3) {
+            newStatus = 'JUDGING_COMPLETE';
+          } else if (assignedSets >= 1) {
+            newStatus = 'IN_JUDGING';
+          }
+
+          await prisma.project.update({
+            where: { id: flag.projectId },
+            data: { status: newStatus as any }
+          });
+        }
+      }
+    }
+
+    // Emit socket event for real-time updates
+    const io = req.app.get('io');
+    io.emit('flag:updated', {
+      eventId: req.params.eventId,
+      flagId: flag.id,
+      projectId: flag.projectId,
+      status
+    });
+
     res.json(flag);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

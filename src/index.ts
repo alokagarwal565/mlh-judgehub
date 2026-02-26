@@ -12,6 +12,8 @@ import scoreRoutes from './routes/scores.js';
 import resultRoutes from './routes/results.js';
 import flagRoutes from './routes/flags.js';
 import trackRoutes from './routes/tracks.js';
+import userRoutes from './routes/users.js';
+import editRequestRoutes from './routes/editRequests.js';
 import { setupSocket } from './socket/handler.js';
 
 export const prisma = new PrismaClient();
@@ -36,6 +38,8 @@ app.use('/api/events', scoreRoutes);
 app.use('/api/events', resultRoutes);
 app.use('/api/events', flagRoutes);
 app.use('/api/events', trackRoutes);
+app.use('/api/admin', userRoutes);
+app.use('/api/edit-requests', editRequestRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

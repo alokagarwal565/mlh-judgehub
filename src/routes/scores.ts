@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../index.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { generateLeaderboard } from '../engine/scoring.js';
 
 const router = Router();
 
@@ -174,9 +175,20 @@ router.post('/:eventId/sets/:setId/reopen', authenticate, requireRole('JUDGE', '
     if (!set) return res.status(404).json({ error: 'Set not found' });
     if (set.status !== 'COMPLETED') return res.status(400).json({ error: 'Set is not completed' });
 
-    // Judge-specific guard: cannot reopen if they have another IN_PROGRESS set
+    // Judge-specific guard: cannot reopen unless they have an approved edit request OR they don't have an active set (if we allowed that before)
+    // Actually, the new rule is: Judges can ONLY reopen if they have an APPROVED EditRequest.
     if (req.user!.role === 'JUDGE') {
       if (set.judgeId !== req.user!.userId) return res.status(403).json({ error: 'Not your set' });
+
+      // Check for approved edit request
+      const editRequest = await prisma.editRequest.findFirst({
+        where: { setId, judgeId: req.user!.userId, status: 'APPROVED' }
+      });
+
+      if (!editRequest) {
+        return res.status(403).json({ error: 'Editing locked. Please request access from an administrator.' });
+      }
+
 
       const activeSet = await prisma.judgeSet.findFirst({
         where: { judgeId: req.user!.userId, status: 'IN_PROGRESS' }
@@ -184,6 +196,12 @@ router.post('/:eventId/sets/:setId/reopen', authenticate, requireRole('JUDGE', '
       if (activeSet) {
         return res.status(400).json({ error: 'Cannot edit: you have an active set in progress. Complete it first.' });
       }
+
+      // Mark request as USED once they reopen
+      await prisma.editRequest.update({
+        where: { id: editRequest.id },
+        data: { status: 'USED' }
+      });
     }
 
     // Reopen the set
@@ -269,6 +287,22 @@ router.post('/:eventId/sets/:setId/complete', authenticate, requireRole('JUDGE',
     const progress = await getAssignmentProgress(req.params.eventId);
     io.emit('judging:progress', { eventId: req.params.eventId, ...progress });
 
+    // ─── TIE BREAKER TRIGGER ────────────────────────────────────────────────
+    // Check if we need to start the tie-breaking phase (Set #0)
+    try {
+      const { checkAndTriggerTieBreaker } = await import('../engine/tiebreaker.js');
+      await checkAndTriggerTieBreaker(req.params.eventId);
+    } catch (err) {
+      console.error('[TieBreakerError]', err);
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
+    // Mark any associated EditRequests as USED if they were APPROVED or PENDING
+    await prisma.editRequest.updateMany({
+      where: { setId, status: { in: ['APPROVED', 'PENDING'] } },
+      data: { status: 'USED' }
+    });
+
     res.json({ message: 'Set completed' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -296,7 +330,20 @@ router.get('/:eventId/sets/:setId', authenticate, async (req, res) => {
       }
     });
     if (!set) return res.status(404).json({ error: 'Set not found' });
-    res.json(set);
+
+    // Enrich Set #0 with base rank for UI display
+    let baseRank = null;
+    if (set.setNumber === 0) {
+      const projectsCount = set.projects.length;
+      if (projectsCount > 0) {
+        const leaderboard = await generateLeaderboard(req.params.eventId);
+        const p0Id = set.projects[0].projectId;
+        const entry = leaderboard.find(e => e.projectId === p0Id);
+        baseRank = entry?.rank || 1;
+      }
+    }
+
+    res.json({ ...set, baseRank });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

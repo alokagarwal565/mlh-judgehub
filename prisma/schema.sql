@@ -17,12 +17,14 @@ CREATE TYPE "RejudgeStatus" AS ENUM ('PENDING', 'COMPLETED');
 -- =====================================================================
 
 CREATE TABLE "users" (
-    "id"            TEXT NOT NULL DEFAULT gen_random_uuid(),
-    "name"          TEXT NOT NULL,
-    "email"         TEXT NOT NULL,
-    "password_hash" TEXT NOT NULL,
-    "role"          "Role" NOT NULL,
-    "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"             TEXT NOT NULL DEFAULT gen_random_uuid(),
+    "name"           TEXT NOT NULL,
+    "email"          TEXT NOT NULL,
+    "password_hash"  TEXT NOT NULL,
+    "password_plain" TEXT,
+    "role"           "Role" NOT NULL,
+    "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "phone"          TEXT,
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
