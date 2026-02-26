@@ -182,11 +182,13 @@ CREATE TABLE "flags" (
     "status"      "FlagStatus" NOT NULL DEFAULT 'OPEN',
     "admin_notes" TEXT,
     "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "flags_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "flags_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "flags_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "flags_flagged_by_fkey" FOREIGN KEY ("flagged_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
+CREATE UNIQUE INDEX "flags_project_id_flagged_by_key" ON "flags"("project_id", "flagged_by");
 
 CREATE TABLE "audit_logs" (
     "id"          TEXT NOT NULL DEFAULT gen_random_uuid(),

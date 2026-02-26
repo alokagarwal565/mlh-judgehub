@@ -82,10 +82,12 @@ model Flag {
   status     FlagStatus @default(OPEN)
   adminNotes String?    @map("admin_notes")
   createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @default(now()) @updatedAt @map("updated_at")
   event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   creator    User       @relation("FlagCreator", fields: [flaggedBy], references: [id])
   project    Project    @relation(fields: [projectId], references: [id])
 
+  @@unique([projectId, flaggedBy])
   @@map("flags")
 }
 
