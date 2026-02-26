@@ -132,7 +132,10 @@ router.get('/:eventId/projects/:projectId/details', authenticate, requireActiveE
     const { eventId, projectId } = req.params;
 
     const evaluations = await prisma.judgeSetProject.findMany({
-      where: { projectId },
+      where: { 
+        projectId,
+        set: { eventId }
+      },
       include: {
         set: {
           include: {
