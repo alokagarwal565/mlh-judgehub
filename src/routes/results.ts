@@ -131,7 +131,7 @@ router.get('/:eventId/projects/:projectId/details', authenticate, requireRole('A
           include: {
             judge: { select: { id: true, name: true } },
             scores: { where: { projectId } },
-            feedback: { where: { projectId } },
+            feedbacks: { where: { projectId } },
             nominations: { where: { projectId }, include: { track: true } },
             stackRankVotes: { where: { projectId } },
             projects: { include: { project: true } }

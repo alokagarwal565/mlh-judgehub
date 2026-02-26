@@ -28,7 +28,7 @@ router.post('/request', authenticate, requireRole('JUDGE'), async (req, res) => 
     }
 
     const request = await prisma.editRequest.create({
-      data: { setId, judgeId, reason, status: 'PENDING' },
+      data: { setId, judgeId, reason, status: 'PENDING', updatedAt: new Date() },
       include: { set: true, judge: { select: { name: true } } }
     });
 
