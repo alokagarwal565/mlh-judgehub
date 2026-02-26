@@ -38,6 +38,7 @@ CREATE TABLE "events" (
     "time_per_project" INTEGER NOT NULL DEFAULT 180,
     "set_size"         INTEGER NOT NULL DEFAULT 5,
     "status"           "EventStatus" NOT NULL DEFAULT 'SETUP',
+    "is_active"        BOOLEAN NOT NULL DEFAULT false,
     "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "events_pkey" PRIMARY KEY ("id")
 );

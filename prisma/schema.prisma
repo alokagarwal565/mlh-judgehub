@@ -45,6 +45,7 @@ model Event {
   timePerProject Int                 @default(180) @map("time_per_project")
   setSize        Int                 @default(5) @map("set_size")
   status         EventStatus         @default(SETUP)
+  isActive       Boolean             @default(false) @map("is_active")
   createdAt      DateTime            @default(now()) @map("created_at")
   flags          Flag[]
   judgeSets      JudgeSet[]
