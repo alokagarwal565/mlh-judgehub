@@ -15,6 +15,7 @@ export default function AdminIntegrity() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [severityFilter, setSeverityFilter] = useState('ALL');
+  const [groupByProject, setGroupByProject] = useState(false);
   const { showLoader, hideLoader } = useLoader();
 
   useEffect(() => { 
@@ -75,6 +76,27 @@ export default function AdminIntegrity() {
     DISMISSED: flags.filter(f => f.status === 'DISMISSED').length
   };
 
+  // Group flags by project
+  const groupedFlags = filteredFlags.reduce((acc, flag) => {
+    const projectId = flag.projectId;
+    if (!acc[projectId]) {
+      acc[projectId] = {
+        project: flag.project,
+        flags: []
+      };
+    }
+    acc[projectId].flags.push(flag);
+    return acc;
+  }, {});
+
+  const projectsWithFlags = Object.values(groupedFlags).sort((a, b) => {
+    // Sort by number of active flags (OPEN + REVIEWED), then by project title
+    const aActive = a.flags.filter(f => f.status === 'OPEN' || f.status === 'REVIEWED').length;
+    const bActive = b.flags.filter(f => f.status === 'OPEN' || f.status === 'REVIEWED').length;
+    if (aActive !== bActive) return bActive - aActive;
+    return (a.project?.title || '').localeCompare(b.project?.title || '');
+  });
+
   return (
     <div>
       {!activeEvent && (
@@ -133,7 +155,16 @@ export default function AdminIntegrity() {
 
       <div className="card">
         <div style={{marginBottom:16}}>
-          <div className="card-title" style={{marginBottom:12}}>Flags ({filteredFlags.length})</div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <div className="card-title">Flags ({filteredFlags.length})</div>
+            <button 
+              className={`btn btn-sm ${groupByProject ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setGroupByProject(!groupByProject)}
+              title={groupByProject ? 'Switch to list view' : 'Group by project'}
+            >
+              {groupByProject ? '📋 List View' : '📁 Group by Project'}
+            </button>
+          </div>
           
           {/* Status filter pills */}
           <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
@@ -161,7 +192,99 @@ export default function AdminIntegrity() {
 
         {filteredFlags.length === 0 ? (
           <p className="text-sm text-muted">{search || statusFilter !== 'ALL' ? 'No flags match your filters' : 'No flags yet'}</p>
+        ) : groupByProject ? (
+          /* Grouped View */
+          <div style={{display: 'flex', flexDirection: 'column', gap: 16}}>
+            {projectsWithFlags.map(({ project, flags }) => {
+              const activeFlags = flags.filter(f => f.status === 'OPEN' || f.status === 'REVIEWED');
+              const hasActive = activeFlags.length > 0;
+              return (
+                <div key={project?.id} style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${hasActive ? 'var(--accent)' : 'var(--border-color)'}`,
+                  borderRadius: 8,
+                  overflow: 'hidden'
+                }}>
+                  {/* Project Header */}
+                  <div style={{
+                    padding: 16,
+                    background: hasActive ? 'rgba(255,100,100,0.1)' : 'rgba(255,255,255,0.03)',
+                    borderBottom: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                      <div style={{flex: 1}}>
+                        <div style={{fontWeight: 600, fontSize: 15, marginBottom: 4}}>
+                          {hasActive && '🚩 '}{project?.title || 'Unknown Project'}
+                        </div>
+                        <div style={{fontSize: 12, color: 'var(--text-muted)'}}>
+                          {project?.team?.name && <span style={{marginRight: 12}}><strong>Team:</strong> {project.team.name}</span>}
+                          {project?.teamNumber && <span style={{marginRight: 12}}><strong>Team No:</strong> {project.teamNumber}</span>}
+                          {project?.roomNumber && <span><strong>Room:</strong> {project.roomNumber}</span>}
+                        </div>
+                      </div>
+                      <div style={{
+                        background: hasActive ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+                        color: hasActive ? '#fff' : 'var(--text-secondary)',
+                        padding: '4px 12px',
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 600
+                      }}>
+                        {flags.length} flag{flags.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Flags List */}
+                  <div style={{padding: 16}}>
+                    {flags.map((f, idx) => (
+                      <div key={f.id} style={{
+                        padding: 12,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8,
+                        marginBottom: idx < flags.length - 1 ? 12 : 0
+                      }}>
+                        <div style={{display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start'}}>
+                          <div style={{flex: 1}}>
+                            <div style={{marginBottom: 4, fontSize: 12}}>
+                              <strong>{f.creator?.name}</strong> <span className="text-sm text-muted">({f.creator?.role})</span>
+                              <span className={`badge ${f.status === 'OPEN' ? 'badge-warning' : f.status === 'REVIEWED' ? 'badge-success' : 'badge-info'}`} style={{marginLeft: 8}}>{f.status}</span>
+                            </div>
+                            <div style={{fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5}}>
+                              {f.reason}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2" style={{alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}>
+                          {f.status === 'OPEN' && (
+                            <>
+                              <button className="btn btn-success btn-sm" onClick={() => updateFlag(f.id, 'REVIEWED')} title="Mark as Reviewed">✓ Review</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => updateFlag(f.id, 'DISMISSED')} title="Dismiss flag">✕ Dismiss</button>
+                            </>
+                          )}
+                          {f.status === 'REVIEWED' && (
+                            <>
+                              <button className="btn btn-info btn-sm" onClick={() => updateFlag(f.id, 'OPEN')} title="Reopen flag">⟲ Reopen</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => updateFlag(f.id, 'DISMISSED')} title="Dismiss flag">✕ Dismiss</button>
+                            </>
+                          )}
+                          {f.status === 'DISMISSED' && (
+                            <>
+                              <button className="btn btn-warning btn-sm" onClick={() => updateFlag(f.id, 'OPEN')} title="Reopen flag">⟲ Reopen</button>
+                              <button className="btn btn-info btn-sm" onClick={() => updateFlag(f.id, 'REVIEWED')} title="Mark as Reviewed">✓ Review</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* List View (Table) */
           <div className="table-wrap">
             <table>
               <thead><tr><th>Project</th><th>Team</th><th>Team No</th><th>Room</th><th>Flagged By</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead>

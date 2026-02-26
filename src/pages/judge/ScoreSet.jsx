@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useLoader } from '../../context/LoaderContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const readonly = isAdminView || isReadOnly;
@@ -10,6 +11,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const navigate = useNavigate();
   const { error: toastError } = useToast();
     const { showLoader, hideLoader } = useLoader();
+  const { user } = useAuth();
   const [set, setSet] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -25,8 +27,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const [flagSuccess, setFlagSuccess] = useState(false);
   const [flaggedIds, setFlaggedIds] = useState(new Set());
   const [isEditing, setIsEditing] = useState(false);
-  const [projectFlags, setProjectFlags] = useState({}); // projectId -> flag object
+  const [projectFlags, setProjectFlags] = useState({}); // projectId -> [flag1, flag2, ...]
   const [flagEditMode, setFlagEditMode] = useState(false);
+  const [deleteFlagId, setDeleteFlagId] = useState(null);
 
   useEffect(() => {
     showLoader('Loading scoring set...');
@@ -87,7 +90,10 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         api.get(`/events/${ev.id}/flags`).then(r => {
           const flagsByProject = {};
           for (const flag of r.data) {
-            flagsByProject[flag.projectId] = flag;
+            if (!flagsByProject[flag.projectId]) {
+              flagsByProject[flag.projectId] = [];
+            }
+            flagsByProject[flag.projectId].push(flag);
           }
           setProjectFlags(flagsByProject);
         }).catch(() => {
@@ -485,131 +491,194 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       {/* Flag */}
       {!readonly && (
         <div style={{marginBottom:16}}>
-          {projectFlags[currentProject?.id] ? (
-            (() => {
-              const flag = projectFlags[currentProject.id];
-              const isOpenOrReviewed = flag.status === 'OPEN' || flag.status === 'REVIEWED';
-              const isDismissed = flag.status === 'DISMISSED';
-              const statusColor = flag.status === 'OPEN' ? 'var(--accent)' : flag.status === 'REVIEWED' ? 'var(--warning)' : 'var(--success)';
-              const statusEmoji = flag.status === 'OPEN' ? '🚩' : flag.status === 'REVIEWED' ? '⚠️' : '✅';
+          {(() => {
+            const allFlags = projectFlags[currentProject?.id] || [];
+            const myFlag = allFlags.find(f => f.flaggedBy === user?.id);
+            const otherFlags = allFlags.filter(f => f.flaggedBy !== user?.id);
 
-              return (
-                <div style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${statusColor}`,
-                  borderRadius: 10,
-                  padding: 16,
-                  marginBottom: 16
-                }}>
-                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
-                    <span style={{fontSize:20}}>{statusEmoji}</span>
-                    <div>
-                      <div style={{fontWeight:600}}>
-                        {flag.status === 'OPEN' ? '🚩 Flag Raised' : flag.status === 'REVIEWED' ? '✅ Flag Confirmed by Admin' : '✅ Resolved'}
-                      </div>
-                      <div className="text-sm text-muted" style={{fontSize:11}}>
-                        {flag.status === 'OPEN'
-                          ? 'Awaiting admin review. You can edit the reason below.'
-                          : flag.status === 'REVIEWED'
-                          ? 'Admin has reviewed and confirmed this flag is valid. Project is marked as flagged.'
-                          : 'This flag has been dismissed. You can raise a new flag if needed.'}
-                      </div>
-                    </div>
-                  </div>
+            return (
+              <>
+                {/* My Flag Section */}
+                {myFlag ? (
+                  (() => {
+                    const isOpenOrReviewed = myFlag.status === 'OPEN' || myFlag.status === 'REVIEWED';
+                    const isDismissed = myFlag.status === 'DISMISSED';
+                    const statusColor = myFlag.status === 'OPEN' ? 'var(--accent)' : myFlag.status === 'REVIEWED' ? 'var(--warning)' : 'var(--success)';
+                    const statusEmoji = myFlag.status === 'OPEN' ? '🚩' : myFlag.status === 'REVIEWED' ? '⚠️' : '✅';
 
-                  {isOpenOrReviewed && (
-                    <>
-                      <div className="form-group" style={{marginBottom:12}}>
-                        <label className="form-label text-sm" style={{marginBottom:4}}>Current Reason</label>
-                        {flagEditMode ? (
-                          <>
-                            <textarea
-                              className="form-textarea"
-                              placeholder="Edit the reason..."
-                              value={flagReason}
-                              onChange={e => setFlagReason(e.target.value)}
-                              style={{minHeight:60}}
-                            />
-                            <div className="flex gap-2" style={{marginTop:8}}>
-                              <button className="btn btn-ghost btn-sm" onClick={() => {
-                                setFlagEditMode(false);
-                                setFlagReason('');
-                              }}>Cancel</button>
-                              <button className="btn btn-primary btn-sm" disabled={!flagReason.trim()} onClick={async () => {
-                                try {
-                                  await api.put(`/events/${eventId}/flags/${flag.id}/edit-reason`, { reason: flagReason });
-                                  setProjectFlags(prev => ({
-                                    ...prev,
-                                    [currentProject.id]: { ...flag, reason: flagReason }
-                                  }));
-                                  setFlagEditMode(false);
-                                  setFlagReason('');
-                                } catch (err) {
-                                  toastError('Failed to update flag reason: ' + (err.response?.data?.error || err.message));
-                                }
-                              }}>Save Changes</button>
+                    return (
+                      <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${statusColor}`,
+                        borderRadius: 10,
+                        padding: 16,
+                        marginBottom: 16
+                      }}>
+                        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
+                          <span style={{fontSize:20}}>{statusEmoji}</span>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:600}}>
+                              {myFlag.status === 'OPEN' ? '🚩 My Flag (Open)' : myFlag.status === 'REVIEWED' ? '⚠️ My Flag (Reviewed by Admin)' : '✅ My Flag (Resolved)'}
                             </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, marginBottom:8}}>
-                              {flag.reason}
+                            <div className="text-sm text-muted" style={{fontSize:11}}>
+                              {myFlag.status === 'OPEN'
+                                ? 'Awaiting admin review. You can edit or delete this flag.'
+                                : myFlag.status === 'REVIEWED'
+                                ? 'Admin has reviewed and confirmed this flag is valid.'
+                                : 'This flag has been dismissed. You can raise a new flag if needed.'}
                             </div>
-                            {flag.status === 'OPEN' && (
-                              <button className="btn btn-ghost btn-sm" onClick={() => {
-                                setFlagReason(flag.reason);
-                                setFlagEditMode(true);
-                              }}>✏️ Edit Reason</button>
+                          </div>
+                        </div>
+
+                        {isOpenOrReviewed && (
+                          <>
+                            <div className="form-group" style={{marginBottom:12}}>
+                              <label className="form-label text-sm" style={{marginBottom:4}}>Reason</label>
+                              {flagEditMode ? (
+                                <>
+                                  <textarea
+                                    className="form-textarea"
+                                    placeholder="Edit the reason..."
+                                    value={flagReason}
+                                    onChange={e => setFlagReason(e.target.value)}
+                                    style={{minHeight:60}}
+                                  />
+                                  <div className="flex gap-2" style={{marginTop:8}}>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => {
+                                      setFlagEditMode(false);
+                                      setFlagReason('');
+                                    }}>Cancel</button>
+                                    <button className="btn btn-primary btn-sm" disabled={!flagReason.trim()} onClick={async () => {
+                                      try {
+                                        await api.put(`/events/${eventId}/flags/${myFlag.id}/edit-reason`, { reason: flagReason });
+                                        setProjectFlags(prev => ({
+                                          ...prev,
+                                          [currentProject.id]: prev[currentProject.id].map(f => 
+                                            f.id === myFlag.id ? { ...f, reason: flagReason } : f
+                                          )
+                                        }));
+                                        setFlagEditMode(false);
+                                        setFlagReason('');
+                                      } catch (err) {
+                                        toastError('Failed to update flag: ' + (err.response?.data?.error || err.message));
+                                      }
+                                    }}>Save Changes</button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, marginBottom:8}}>
+                                    {myFlag.reason}
+                                  </div>
+                                  {myFlag.status === 'OPEN' && (
+                                    <div className="flex gap-2">
+                                      <button className="btn btn-ghost btn-sm" onClick={() => {
+                                        setFlagReason(myFlag.reason);
+                                        setFlagEditMode(true);
+                                      }}>✏️ Edit</button>
+                                      <button className="btn btn-ghost btn-sm" onClick={() => setDeleteFlagId(myFlag.id)}>🗑️ Delete</button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            {myFlag.adminNotes && (
+                              <div className="form-group" style={{marginBottom:12}}>
+                                <label className="form-label text-sm" style={{marginBottom:4}}>Admin Notes</label>
+                                <div className="text-sm" style={{background:'rgba(255,200,100,0.1)', border:'1px solid rgba(255,200,100,0.3)', padding:10, borderRadius:8, color:'var(--warning)'}}>
+                                  {myFlag.adminNotes}
+                                </div>
+                              </div>
                             )}
                           </>
                         )}
-                      </div>
-                      {flag.adminNotes && (
-                        <div className="form-group" style={{marginBottom:12}}>
-                          <label className="form-label text-sm" style={{marginBottom:4}}>Admin Notes</label>
-                          <div className="text-sm" style={{background:'rgba(255,200,100,0.1)', border:'1px solid rgba(255,200,100,0.3)', padding:10, borderRadius:8, color:'var(--warning)'}}>
-                            {flag.adminNotes}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
 
-                  {isDismissed && (
-                    <>
-                      <div className="form-group" style={{marginBottom:16}}>
-                        <label className="form-label text-sm" style={{marginBottom:4}}>Previous Flag Reason</label>
-                        <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
-                          {flag.reason}
-                        </div>
-                        {flag.adminNotes && (
+                        {isDismissed && (
                           <>
-                            <label className="form-label text-sm" style={{marginTop:12, marginBottom:4}}>Admin Notes</label>
-                            <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
-                              {flag.adminNotes}
+                            <div className="form-group" style={{marginBottom:16}}>
+                              <label className="form-label text-sm" style={{marginBottom:4}}>Previous Reason</label>
+                              <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
+                                {myFlag.reason}
+                              </div>
+                              {myFlag.adminNotes && (
+                                <>
+                                  <label className="form-label text-sm" style={{marginTop:12, marginBottom:4}}>Admin Notes</label>
+                                  <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
+                                    {myFlag.adminNotes}
+                                  </div>
+                                </>
+                              )}
                             </div>
+                            <button 
+                              className="btn btn-primary btn-sm"
+                              onClick={() => {
+                                setFlagReason('');
+                                setFlagSuccess(false);
+                                setFlagEditMode(false);
+                                setFlagModal(true);
+                              }}
+                            >
+                              🚩 Raise New Flag
+                            </button>
                           </>
                         )}
                       </div>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          setFlagReason('');
-                          setFlagSuccess(false);
-                          setFlagEditMode(false);
-                          setFlagModal(true);
-                        }}
-                      >
-                        🚩 Raise New Flag
-                      </button>
-                    </>
-                  )}
-                </div>
-              );
-            })()
-          ) : (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setFlagReason(''); setFlagSuccess(false); setFlagModal(true); }}>🚩 Flag Project</button>
-          )}
+                    );
+                  })()
+                ) : (
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setFlagReason(''); setFlagSuccess(false); setFlagModal(true); }}>🚩 Flag Project</button>
+                )}
+
+                {/* Other Judges' Flags Section */}
+                {otherFlags.length > 0 && (
+                  <div style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 10,
+                    padding: 16,
+                    marginTop: 12
+                  }}>
+                    <div style={{fontWeight:600, marginBottom:12, fontSize:13}}>
+                      👥 Flags from Other Judges ({otherFlags.length})
+                    </div>
+                    {otherFlags.map((flag, idx) => {
+                      const statusColor = flag.status === 'OPEN' ? 'var(--accent)' : flag.status === 'REVIEWED' ? 'var(--warning)' : 'var(--success)';
+                      const statusEmoji = flag.status === 'OPEN' ? '🚩' : flag.status === 'REVIEWED' ? '⚠️' : '✅';
+                      return (
+                        <div key={flag.id} style={{
+                          background: 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${statusColor}`,
+                          borderRadius: 8,
+                          padding: 12,
+                          marginBottom: idx < otherFlags.length - 1 ? 12 : 0
+                        }}>
+                          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
+                            <span style={{fontSize:16}}>{statusEmoji}</span>
+                            <div>
+                              <div style={{fontWeight:600, fontSize:12}}>
+                                {flag.creator?.name || 'Unknown Judge'} <span className="text-sm text-muted">({flag.creator?.role || 'JUDGE'})</span>
+                              </div>
+                              <div className="text-sm text-muted" style={{fontSize:10}}>
+                                Status: {flag.status}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:8, borderRadius:6, fontSize:12}}>
+                            {flag.reason}
+                          </div>
+                          {flag.adminNotes && (
+                            <div className="text-sm" style={{background:'rgba(255,200,100,0.1)', border:'1px solid rgba(255,200,100,0.3)', padding:8, borderRadius:6, color:'var(--warning)', marginTop:8, fontSize:11}}>
+                              <strong>Admin Notes:</strong> {flag.adminNotes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -639,20 +708,25 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                 <div className="flex gap-2" style={{marginTop:16,justifyContent:'flex-end'}}>
                   <button className="btn btn-ghost" onClick={() => setFlagModal(false)}>Cancel</button>
                   <button className="btn btn-primary" disabled={!flagReason.trim()} onClick={async () => {
-                    await api.post(`/events/${eventId}/flags`, { projectId: currentProject.id, reason: flagReason });
-                    setFlaggedIds(prev => new Set([...prev, currentProject.id]));
-                    setProjectFlags(prev => ({
-                      ...prev,
-                      [currentProject.id]: {
-                        id: 'temp',
-                        projectId: currentProject.id,
-                        status: 'OPEN',
-                        reason: flagReason,
-                        createdAt: new Date().toISOString()
-                      }
-                    }));
-                    setFlagSuccess(true);
-                    setTimeout(() => setFlagModal(false), 1500);
+                    try {
+                      const res = await api.post(`/events/${eventId}/flags`, { projectId: currentProject.id, reason: flagReason });
+                      setFlaggedIds(prev => new Set([...prev, currentProject.id]));
+                      setProjectFlags(prev => {
+                        const existing = prev[currentProject.id] || [];
+                        // Upsert: replace if exists, otherwise append
+                        const myFlagIdx = existing.findIndex(f => f.flaggedBy === user?.id);
+                        if (myFlagIdx >= 0) {
+                          existing[myFlagIdx] = res.data;
+                          return { ...prev, [currentProject.id]: [...existing] };
+                        } else {
+                          return { ...prev, [currentProject.id]: [...existing, res.data] };
+                        }
+                      });
+                      setFlagSuccess(true);
+                      setTimeout(() => setFlagModal(false), 1500);
+                    } catch (err) {
+                      toastError('Failed to submit flag: ' + (err.response?.data?.error || err.message));
+                    }
                   }}>Submit Flag</button>
                 </div>
               </>
@@ -660,6 +734,55 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
           </div>
         </div>
       )}
+
+      {/* Delete Flag Confirmation Modal */}
+      {deleteFlagId && (() => {
+        const flagToDelete = (projectFlags[currentProject?.id] || []).find(f => f.id === deleteFlagId);
+        return (
+          <div className="modal-overlay" onClick={() => setDeleteFlagId(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
+              <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
+              <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
+                <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
+                <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Flag?</h2>
+                <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
+                  Are you sure you want to delete this flag?
+                  <br/><br/>
+                  <strong style={{color: 'var(--text-primary)'}}>{currentProject?.title}</strong>
+                  <br/><br/>
+                  This action <strong>cannot be undone</strong>.
+                </p>
+              </div>
+              <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
+                <button className="btn btn-ghost" onClick={() => setDeleteFlagId(null)} style={{flex: 1}}>Cancel</button>
+                <button className="btn btn-danger" onClick={async () => {
+                  try {
+                    await api.delete(`/events/${eventId}/flags/${deleteFlagId}`);
+                    setProjectFlags(prev => ({
+                      ...prev,
+                      [currentProject.id]: prev[currentProject.id].filter(f => f.id !== deleteFlagId)
+                    }));
+                    setFlaggedIds(prev => {
+                      const newSet = new Set(prev);
+                      const otherFlags = (projectFlags[currentProject.id] || []).filter(f => f.id !== deleteFlagId && f.flaggedBy !== user?.id);
+                      // Only remove from flaggedIds if no other active flags remain
+                      if (!otherFlags.some(f => f.status === 'OPEN' || f.status === 'REVIEWED')) {
+                        newSet.delete(currentProject.id);
+                      }
+                      return newSet;
+                    });
+                    setDeleteFlagId(null);
+                  } catch (err) {
+                    toastError('Failed to delete flag: ' + (err.response?.data?.error || err.message));
+                  }
+                }} style={{flex: 1}}>
+                  🗑 Delete Flag
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="flex gap-3 mt-4">
         {currentIdx > 0 && (
