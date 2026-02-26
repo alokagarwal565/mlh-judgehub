@@ -23,8 +23,6 @@ export default function AdminIntegrity() {
       setEvents(r.data); 
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length && !eventId) {
-        setEventId(r.data[0].id);
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -79,23 +77,44 @@ export default function AdminIntegrity() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Integrity Checks</h1>
-        <div className="flex gap-2">
-          <div style={{position:'relative', width:250}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input 
-              type="text" 
-              placeholder="Search projects, teams, reasons..." 
-              className="form-input" 
-              style={{width:'100%', paddingLeft:32}}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+      {!activeEvent && (
+        <>
+          <div className="page-header">
+            <h1>Integrity Checks</h1>
           </div>
-          <button className="btn btn-primary" onClick={runChecks} disabled={loading}>{loading ? 'Running...' : '🛡️ Run Checks'}</button>
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            background: 'var(--bg-card)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '20px'
+          }}>
+            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to perform integrity checks.</p>
+          </div>
+        </>
+      )}
+
+      {!activeEvent ? null : (
+        <>
+        <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
+          <h1>Integrity Checks</h1>
+          <div className="flex gap-2">
+            <div style={{position:'relative', width:250}}>
+              <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+              <input 
+                type="text" 
+                placeholder="Search projects, teams, reasons..." 
+                className="form-input" 
+                style={{width:'100%', paddingLeft:32}}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <button className="btn btn-primary" onClick={runChecks} disabled={loading}>{loading ? 'Running...' : '🛡️ Run Checks'}</button>
+          </div>
         </div>
-      </div>
 
       {integrityResults && (
         <div className="card mb-4" style={{borderLeft:'3px solid var(--warning)'}}>
@@ -185,6 +204,8 @@ export default function AdminIntegrity() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

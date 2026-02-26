@@ -56,6 +56,26 @@ export default function AdminDashboard() {
   const displayEvent = activeEvent || events[0];
   const pct = progress ? Math.round((progress.completed / Math.max(progress.total, 1)) * 100) : 0;
 
+  // Show warning if no active event
+  if (!activeEvent) {
+    return (
+      <div>
+        <div className="page-header"><h1>Dashboard</h1></div>
+        <div style={{
+          padding: '40px 20px',
+          textAlign: 'center',
+          background: 'var(--bg-card)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)'
+        }}>
+          <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+          <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to view dashboard data.</p>
+          <p style={{margin: '12px 0 0 0', fontSize: '13px', color: 'var(--text-muted)'}}>Go to Events tab to activate an event.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header"><h1>Dashboard</h1></div>

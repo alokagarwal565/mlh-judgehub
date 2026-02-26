@@ -21,8 +21,6 @@ export default function AdminTracks() {
       setEvents(r.data); 
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length && !eventId) {
-        setEventId(r.data[0].id);
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -85,6 +83,22 @@ export default function AdminTracks() {
     <div style={{maxWidth: 1200, margin: '0 auto'}}>
       <div className="page-header"><h1 style={{fontSize: 32, fontWeight: 800}}>Tracks & Categories</h1></div>
       
+      {!activeEvent && (
+        <div style={{
+          padding: '40px 20px',
+          textAlign: 'center',
+          background: 'var(--bg-card)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)',
+          marginBottom: '20px'
+        }}>
+          <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+          <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to manage tracks.</p>
+        </div>
+      )}
+
+      {!activeEvent ? null : (
+        <>
       <div className="card mb-8" style={{
         border: '1px solid var(--accent)', 
         background: 'rgba(var(--accent-rgb), 0.03)',
@@ -242,6 +256,8 @@ export default function AdminTracks() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

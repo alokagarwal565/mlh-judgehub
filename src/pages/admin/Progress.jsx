@@ -19,11 +19,9 @@ export default function AdminProgress() {
     showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
-      // Default to active event if available, else first event
+      // Only set eventId if activeEvent exists
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length) {
-        setEventId(r.data[0].id);
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -57,7 +55,24 @@ export default function AdminProgress() {
 
   return (
     <div>
-      <div className="page-header"><h1>Live Progress</h1></div>
+      <div className="page-header"><h1>Progress</h1></div>
+
+      {!activeEvent && (
+        <div style={{
+          padding: '40px 20px',
+          textAlign: 'center',
+          background: 'var(--bg-card)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)',
+          marginBottom: '20px'
+        }}>
+          <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+          <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to view judging progress.</p>
+        </div>
+      )}
+
+      {!activeEvent ? null : (
+        <>
       <div className="stats-grid">
         <div className="stat-card"><div className="stat-value">{progress?.total || 0}</div><div className="stat-label">Total Sets</div></div>
         <div className="stat-card"><div className="stat-value" style={{color:'var(--text-muted)'}}>{progress?.unassigned || 0}</div><div className="stat-label">Unassigned</div></div>
@@ -149,6 +164,8 @@ export default function AdminProgress() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -60,11 +60,9 @@ export default function AdminResults() {
     showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
-      // Default to active event if available, else first event
+      // Only set eventId if activeEvent exists
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length) {
-        setEventId(r.data[0].id);
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -137,9 +135,22 @@ export default function AdminResults() {
   };
 
   const handleExport = async () => {
-    const res = await api.get(`/events/${eventId}/results/export`, { responseType: 'blob' });
-    const url = URL.createObjectURL(res.data);
-    const a = document.createElement('a'); a.href = url; a.download = 'leaderboard.csv'; a.click();
+    try {
+      showLoader('Generating CSV export...');
+      const params = new URLSearchParams();
+      if (hideTrackWinners) params.append('excludeTrackWinners', 'true');
+      if (hideFlagged) params.append('excludeFlagged', 'true');
+      const exportUrl = `/events/${eventId}/results/export${params.size ? '?' + params : ''}`;
+      const res = await api.get(exportUrl, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(res.data);
+      const a = document.createElement('a'); a.href = blobUrl; a.download = 'leaderboard.csv'; a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      toastError('Failed to export CSV');
+      console.error('Export failed:', err);
+    } finally {
+      hideLoader();
+    }
   };
 
   const handleRejudge = async () => {
@@ -154,35 +165,56 @@ export default function AdminResults() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Results</h1>
-        <div className="flex gap-2">
-          <div style={{position:'relative', width:250}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input 
-              type="text" 
-              placeholder="Search teams, projects, room/team no..." 
-              className="form-input" 
-              style={{width:'100%', paddingLeft:32}}
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-            />
+      {!activeEvent && (
+        <>
+          <div className="page-header">
+            <h1>Results</h1>
           </div>
-          <button className={`btn btn-ghost btn-sm ${refreshing ? 'loading' : ''}`} onClick={fetchData} disabled={refreshing}>
-            {refreshing ? '⌛ Refreshing...' : '🔄 Refresh'}
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleExport}>📥 Export CSV</button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={handleRejudge}
-            disabled={!allSetsCompleted}
-            title={!allSetsCompleted ? 'All original judging sets must be completed first' : 'Create tie-breaker sets for tied teams'}
-            style={!allSetsCompleted ? {opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.4)'} : {}}
-          >🔄 Rejudge Ties</button>
-        </div>
-      </div>
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            background: 'var(--bg-card)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '20px'
+          }}>
+            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to view results and manage leaderboards.</p>
+          </div>
+        </>
+      )}
 
-      <div className="flex gap-2 mb-4">
+      {!activeEvent ? null : (
+        <>
+          <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+            <h1>Results</h1>
+            <div className="flex gap-2" style={{alignItems:'center'}}>
+              <div style={{position:'relative', width:250}}>
+                <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+                <input 
+                  type="text" 
+                  placeholder="Search teams, projects, room/team no..." 
+                  className="form-input" 
+                  style={{width:'100%', paddingLeft:32}}
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                />
+              </div>
+              <button className={`btn btn-ghost btn-sm ${refreshing ? 'loading' : ''}`} onClick={fetchData} disabled={refreshing}>
+                {refreshing ? '⌛ Refreshing...' : '🔄 Refresh'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={handleExport}>📥 Export CSV</button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleRejudge}
+                disabled={!allSetsCompleted}
+                title={!allSetsCompleted ? 'All original judging sets must be completed first' : 'Create tie-breaker sets for tied teams'}
+                style={!allSetsCompleted ? {opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.4)'} : {}}
+              >🔄 Rejudge Ties</button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 mb-4">
         <button className={`btn ${tab === 'leaderboard' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setTab('leaderboard')}>🏆 Leaderboard</button>
         <button className={`btn ${tab === 'tracks' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setTab('tracks')}>🏷️ Tracks</button>
       </div>
@@ -322,6 +354,9 @@ export default function AdminResults() {
           ))}
         </div>
       )}
+        </>
+      )}
+
       {/* Project Detail Modal */}
       {selectedDetails && (
         <div className="modal-overlay" onClick={() => setSelectedDetails(null)}>

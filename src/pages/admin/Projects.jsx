@@ -39,11 +39,9 @@ export default function AdminProjects() {
     showLoader('Loading events...');
     api.get('/events').then(r => { 
       setEvents(r.data); 
-      // Default to active event if available, else first event
+      // Only set eventId if activeEvent exists
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length && !eventId) {
-        setEventId(r.data[0].id);
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -159,27 +157,48 @@ export default function AdminProjects() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Projects</h1>
-        <div className="flex gap-2">
-          <div style={{position:'relative', width:250}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input 
-              type="text" 
-              placeholder="Search teams, projects, leaders..." 
-              className="form-input" 
-              style={{width:'100%', paddingLeft:32}}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+      {!activeEvent && (
+        <>
+          <div className="page-header">
+            <h1>Projects</h1>
           </div>
-          <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Project</button>
-          <span className="badge badge-info">{filteredProjects.length} teams</span>
-        </div>
-      </div>
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            background: 'var(--bg-card)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '20px'
+          }}>
+            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to view and manage projects.</p>
+          </div>
+        </>
+      )}
 
-      {/* Status filter pills */}
-      <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:16}}>
+      {!activeEvent ? null : (
+        <>
+          <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
+            <h1>Projects</h1>
+            <div className="flex gap-2">
+              <div style={{position:'relative', width:250}}>
+                <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+                <input 
+                  type="text" 
+                  placeholder="Search teams, projects, leaders..." 
+                  className="form-input" 
+                  style={{width:'100%', paddingLeft:32}}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Project</button>
+              <span className="badge badge-info">{filteredProjects.length} teams</span>
+            </div>
+          </div>
+
+          {/* Status filter pills */}
+          <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:16}}>
         {[
           { key:'ALL',              label:'All' },
           { key:'SUBMITTED',        label:'Submitted' },
@@ -246,6 +265,8 @@ export default function AdminProjects() {
         page={page} totalPages={totalPages} total={total}
         perPage={perPage} onPageChange={setPage} onPerPageChange={setPerPage}
       />
+        </>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

@@ -174,6 +174,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: data });
     }
     if (!readonly) await api.post(`/events/${eventId}/sets/${setId}/complete`);
+    showLoader('Redirecting to dashboard...');
     setPhase('done');
     setTimeout(() => navigate(isAdminView ? `/admin/progress` : '/judge'), 1500);
   };
@@ -207,6 +208,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: data });
       await api.post(`/events/${eventId}/sets/${setId}/complete`);
     }
+    showLoader('Redirecting to dashboard...');
     setPhase('done');
     setTimeout(() => navigate(isAdminView ? `/admin/view-judge/${viewAsJudgeId}` : '/judge'), 1500);
   };
@@ -226,13 +228,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   if (!set) return <div className="text-center mt-4"><div className="skeleton" style={{width:200,height:100,margin:'40px auto'}}/></div>;
 
   if (phase === 'done') {
-    return (
-      <div style={{textAlign:'center',padding:'60px 20px'}}>
-        <div style={{fontSize:64,marginBottom:16}}>✅</div>
-        <h2>Set Complete!</h2>
-        <p className="text-muted">Redirecting to dashboard...</p>
-      </div>
-    );
+    return null;
   }
 
   if (phase === 'ranking') {

@@ -42,8 +42,7 @@ export default function AdminAssignments() {
       setEvents(r.data); 
       if (activeEvent) {
         setEventId(activeEvent.id);
-      } else if (r.data.length) {
-        setEventId(r.data[0].id);
+
       }
     }).finally(() => hideLoader()); 
   }, [activeEvent]);
@@ -130,50 +129,71 @@ export default function AdminAssignments() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Assignments</h1>
-        <div className="flex gap-2 items-center">
-          {events.length > 1 && (
-            <select className="form-input" style={{width:'auto'}} value={eventId} onChange={e => setEventId(e.target.value)}>
-              {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-            </select>
-          )}
-          <div style={{display:'flex', alignItems:'center', gap:8}}>
-            {isJudging && (
-              <span style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4}}>
-                🔒 Judging in progress
-              </span>
-            )}
-            <button
-              className="btn btn-primary"
-              onClick={handleGenerate}
-              disabled={loading || isJudging}
-              title={isJudging ? 'Cannot regenerate sets while judging is in progress' : ''}
-              style={isJudging ? {opacity:0.45, cursor:'not-allowed', filter:'grayscale(0.4)'} : {}}
-            >
-              {loading ? 'Generating...' : '⚡ Generate Sets'}
-            </button>
+      {!activeEvent && (
+        <>
+          <div className="page-header">
+            <h1>Assignments</h1>
           </div>
-          {/* Manual assign button - only while judging */}
-          {isJudging && sets.length > 0 && (
-            <button
-              className={`btn ${showAssignPanel ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => {
-                setShowAssignPanel(v => !v);
-                if (!showAssignPanel) loadIdleJudges();
-              }}
-              style={{position:'relative'}}
-            >
-              👥 Manual Assign
-              {idleJudges.filter(j => j.isIdle).length > 0 && (
-                <span style={{position:'absolute', top:-6, right:-6, background:'var(--danger)', color:'#fff', borderRadius:'50%', width:18, height:18, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700}}>
-                  {idleJudges.filter(j => j.isIdle).length}
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            background: 'var(--bg-card)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '20px'
+          }}>
+            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
+            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to manage assignments.</p>
+          </div>
+        </>
+      )}
+
+      {!activeEvent ? null : (
+        <>
+        <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
+          <h1>Assignments</h1>
+          <div className="flex gap-2 items-center">
+            {events.length > 1 && (
+              <select className="form-input" style={{width:'auto'}} value={eventId} onChange={e => setEventId(e.target.value)}>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+              </select>
+            )}
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              {isJudging && (
+                <span style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4}}>
+                  🔒 Judging in progress
                 </span>
               )}
-            </button>
-          )}
+              <button
+                className="btn btn-primary"
+                onClick={handleGenerate}
+                disabled={loading || isJudging}
+                title={isJudging ? 'Cannot regenerate sets while judging is in progress' : ''}
+                style={isJudging ? {opacity:0.45, cursor:'not-allowed', filter:'grayscale(0.4)'} : {}}
+              >
+                {loading ? 'Generating...' : '⚡ Generate Sets'}
+              </button>
+            </div>
+            {/* Manual assign button - only while judging */}
+            {isJudging && sets.length > 0 && (
+              <button
+                className={`btn ${showAssignPanel ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => {
+                  setShowAssignPanel(v => !v);
+                  if (!showAssignPanel) loadIdleJudges();
+                }}
+                style={{position:'relative'}}
+              >
+                👥 Manual Assign
+                {idleJudges.filter(j => j.isIdle).length > 0 && (
+                  <span style={{position:'absolute', top:-6, right:-6, background:'var(--danger)', color:'#fff', borderRadius:'50%', width:18, height:18, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700}}>
+                    {idleJudges.filter(j => j.isIdle).length}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
       {/* ── Manual Assign Panel ─────────────────────────────── */}
       {showAssignPanel && (
@@ -475,6 +495,8 @@ export default function AdminAssignments() {
             );
           })}
         </div>
+      </>
+    )}
       </>
     )}
   </div>
