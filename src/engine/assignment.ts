@@ -1,5 +1,5 @@
 import { Project } from '@prisma/client';
-import { prisma } from '../index.js';
+import { prisma } from '../lib/prisma.js';
 
 /**
  * After any judging event (set assigned / set completed), recompute

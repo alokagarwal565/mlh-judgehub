@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
 import authRoutes from './routes/auth.js';
 import eventRoutes from './routes/events.js';
 import projectRoutes from './routes/projects.js';
@@ -15,8 +14,8 @@ import trackRoutes from './routes/tracks.js';
 import userRoutes from './routes/users.js';
 import editRequestRoutes from './routes/editRequests.js';
 import { setupSocket } from './socket/handler.js';
+import { prisma } from './lib/prisma.js';
 
-export const prisma = new PrismaClient();
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../index.js';
+import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { generateLeaderboard } from '../engine/scoring.js';
 
