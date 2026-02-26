@@ -123,12 +123,22 @@ export default function AdminResults() {
   }, [socket, eventId, fetchData]);
 
   const handleShowDetails = async (projectId) => {
+    if (!eventId) {
+      toastError('No event selected');
+      return;
+    }
     setLoadingDetails(true);
+    setSelectedDetails(null); // Clear previous data
     try {
       const res = await api.get(`/events/${eventId}/projects/${projectId}/details`);
+      console.log('API Response:', res);
+      console.log('API Data:', res.data);
+      console.log('Is Array:', Array.isArray(res.data));
       setSelectedDetails(res.data);
     } catch (err) {
+      console.error('Details error:', err);
       toastError('Failed to load project details');
+      setSelectedDetails(null);
     } finally {
       setLoadingDetails(false);
     }
@@ -161,6 +171,11 @@ export default function AdminResults() {
         '🔁 Rejudge Created'
       );
     } catch (err) { toastError(err.response?.data?.error || 'Failed', 'Rejudge Failed'); }
+  };
+
+  const closeDetailsModal = () => {
+    setSelectedDetails(null);
+    setLoadingDetails(false);
   };
 
   return (
@@ -358,13 +373,19 @@ export default function AdminResults() {
       )}
 
       {/* Project Detail Modal */}
-      {selectedDetails && (
-        <div className="modal-overlay" onClick={() => setSelectedDetails(null)}>
+      {(loadingDetails || selectedDetails) && (
+        <div className="modal-overlay" onClick={closeDetailsModal}>
           <div className="modal-content" style={{maxWidth:700}} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h2>Project Evaluation Details</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => setSelectedDetails(null)}>✕</button>
+              <button className="btn btn-ghost btn-sm" onClick={closeDetailsModal}>✕</button>
             </div>
+            {loadingDetails ? (
+              <div style={{textAlign:'center', padding:'40px 20px'}}>
+                <div className="skeleton" style={{width:200, height:100, margin:'20px auto'}}/>
+              </div>
+            ) : (
+              <>
             <div className="flex gap-4 mb-6">
               <span className="badge badge-info">Coverage: {selectedDetails.filter(ev => ev.set.status === 'COMPLETED').length} / {selectedDetails.length} evaluations</span>
             </div>
@@ -386,9 +407,9 @@ export default function AdminResults() {
                      return `${start} - ${start + sorted.length - 1}`;
                   };
                   const isComplete = ev.set.status === 'COMPLETED';
-                  const score = ev.set.scores[0] || {};
-                  const feedback = ev.set.feedback[0];
-                  const rank = ev.set.stackRankVotes[0];
+                  const score = ev.set.scores?.[0] || {};
+                  const feedback = ev.set.feedback?.[0];
+                  const rank = ev.set.stackRankVotes?.[0];
                   return (
                     <div key={idx} className="card" style={{
                       borderLeft: `4px solid ${!isComplete ? 'var(--text-muted)' : rank ? 'var(--success)' : 'var(--accent)'}`,
@@ -454,7 +475,7 @@ export default function AdminResults() {
                             </div>
                           )}
   
-                          {ev.set.nominations.length > 0 && (
+                          {ev.set.nominations && ev.set.nominations.length > 0 && (
                             <div className="flex gap-2 flex-wrap">
                               {ev.set.nominations.map(n => (
                                 <span key={n.id} style={{fontSize:10, padding:'3px 10px', borderRadius:20, background:`${n.track.color}15`, color:n.track.color, border:`1px solid ${n.track.color}30`, fontWeight:600}}>
@@ -474,6 +495,8 @@ export default function AdminResults() {
                 })
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
       )}

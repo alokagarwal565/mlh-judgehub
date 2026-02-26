@@ -70,12 +70,19 @@ export default function AdminProjects() {
   const [loadingDetails, setLoadingDetails] = useState(false);
 
   const handleShowDetails = async (projectId) => {
+    if (!eventId) {
+      toastError('No event selected');
+      return;
+    }
     setLoadingDetails(true);
+    setSelectedDetails(null); // Clear previous data
     try {
       const res = await api.get(`/events/${eventId}/projects/${projectId}/details`);
       setSelectedDetails(res.data);
     } catch (err) {
+      console.error('Details error:', err);
       toastError('Failed to load project details');
+      setSelectedDetails(null);
     } finally {
       setLoadingDetails(false);
     }
@@ -153,6 +160,11 @@ export default function AdminProjects() {
 
   const handleDelete = (id) => {
     setDeletingProject(id);
+  };
+
+  const closeDetailsModal = () => {
+    setSelectedDetails(null);
+    setLoadingDetails(false);
   };
 
   return (
@@ -333,13 +345,19 @@ export default function AdminProjects() {
       )}
 
       {/* Project Detail Modal */}
-      {selectedDetails && (
-        <div className="modal-overlay" onClick={() => setSelectedDetails(null)}>
+      {(loadingDetails || selectedDetails) && (
+        <div className="modal-overlay" onClick={closeDetailsModal}>
           <div className="modal-content" style={{maxWidth:700}} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h2>Project Evaluation Details</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => setSelectedDetails(null)}>✕</button>
+              <button className="btn btn-ghost btn-sm" onClick={closeDetailsModal}>✕</button>
             </div>
+            {loadingDetails ? (
+              <div style={{textAlign:'center', padding:'40px 20px'}}>
+                <div className="skeleton" style={{width:200, height:100, margin:'20px auto'}}/>
+              </div>
+            ) : (
+              <>
             {/* ... modal content ... */}
             <div className="grid gap-6">
               {selectedDetails.length === 0 ? (
@@ -351,9 +369,9 @@ export default function AdminProjects() {
               ) : (
                 selectedDetails.sort((a, b) => (b.set.status === 'COMPLETED' ? 1 : 0) - (a.set.status === 'COMPLETED' ? 1 : 0)).reverse().map((ev, idx) => {
                   const isComplete = ev.set.status === 'COMPLETED';
-                  const score = ev.set.scores[0] || {};
-                  const feedback = ev.set.feedback[0];
-                  const rank = ev.set.stackRankVotes[0];
+                  const score = ev.set.scores?.[0] || {};
+                  const feedback = ev.set.feedback?.[0];
+                  const rank = ev.set.stackRankVotes?.[0];
                   return (
                     <div key={idx} className="card" style={{
                       borderLeft: `4px solid ${!isComplete ? 'var(--text-muted)' : rank ? 'var(--success)' : 'var(--accent)'}`,
@@ -418,6 +436,8 @@ export default function AdminProjects() {
                 })
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
