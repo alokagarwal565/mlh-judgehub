@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 
 const router = Router();
 
 // GET /api/events/:eventId/tracks
-router.get('/:eventId/tracks', authenticate, async (req, res) => {
+router.get('/:eventId/tracks', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const tracks = await prisma.track.findMany({
       where: { eventId: req.params.eventId },
@@ -18,7 +19,7 @@ router.get('/:eventId/tracks', authenticate, async (req, res) => {
 });
 
 // POST /api/events/:eventId/tracks
-router.post('/:eventId/tracks', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/tracks', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { name, description, color } = req.body;
     const track = await prisma.track.create({
@@ -31,7 +32,7 @@ router.post('/:eventId/tracks', authenticate, requireRole('ADMIN'), async (req, 
 });
 
 // PUT /api/events/:eventId/tracks/:trackId
-router.put('/:eventId/tracks/:trackId', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.put('/:eventId/tracks/:trackId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { name, description, color } = req.body;
     const track = await prisma.track.update({
@@ -45,7 +46,7 @@ router.put('/:eventId/tracks/:trackId', authenticate, requireRole('ADMIN'), asyn
 });
 
 // DELETE /api/events/:eventId/tracks/:trackId
-router.delete('/:eventId/tracks/:trackId', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.delete('/:eventId/tracks/:trackId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     await prisma.track.delete({ where: { id: req.params.trackId } });
     res.json({ message: 'Track deleted' });

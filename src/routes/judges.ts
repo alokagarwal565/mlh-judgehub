@@ -4,11 +4,12 @@ import { parse } from 'csv-parse/sync';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 
 const router = Router();
 
 // GET /api/events/:eventId/judges
-router.get('/:eventId/judges', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const judges = await prisma.user.findMany({
       where: { role: 'JUDGE' },
@@ -56,7 +57,7 @@ router.get('/:eventId/judges', authenticate, requireRole('ADMIN'), async (req, r
 });
 
 // POST /api/events/:eventId/judges — Manual individual add
-router.post('/:eventId/judges', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
     if (!name || !email || !phone) return res.status(400).json({ error: 'Name, email, and phone are required' });
@@ -80,7 +81,7 @@ router.post('/:eventId/judges', authenticate, requireRole('ADMIN'), async (req, 
 });
 
 // PUT /api/events/:eventId/judges/:id — Update judge
-router.put('/:eventId/judges/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.put('/:eventId/judges/:id', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { name, email, phone } = req.body;
     const user = await prisma.user.update({
@@ -98,7 +99,7 @@ router.put('/:eventId/judges/:id', authenticate, requireRole('ADMIN'), async (re
 });
 
 // DELETE /api/events/:eventId/judges/:id — Delete judge
-router.delete('/:eventId/judges/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.delete('/:eventId/judges/:id', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     // Check if judge has any active sets for this event
     await prisma.judgeSet.deleteMany({
@@ -118,7 +119,7 @@ router.delete('/:eventId/judges/:id', authenticate, requireRole('ADMIN'), async 
 });
 
 // POST /api/events/:eventId/judges/import — Bulk CSV import judges
-router.post('/:eventId/judges/import', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/judges/import', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { csvData } = req.body;
     if (!csvData) return res.status(400).json({ error: 'csvData is required' });

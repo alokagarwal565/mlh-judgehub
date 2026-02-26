@@ -4,11 +4,12 @@ import { parse } from 'csv-parse/sync';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 
 const router = Router();
 
 // GET /api/events/:eventId/projects
-router.get('/:eventId/projects', authenticate, async (req, res) => {
+router.get('/:eventId/projects', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const projects = await prisma.project.findMany({
       where: { eventId: req.params.eventId },
@@ -30,7 +31,7 @@ router.get('/:eventId/projects', authenticate, async (req, res) => {
 });
 
 // POST /api/events/:eventId/projects
-router.post('/:eventId/projects', authenticate, async (req, res) => {
+router.post('/:eventId/projects', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const { title, description, demoLink, videoUrl, teamName, teamNumber, roomNumber, leaderName, phone, email, password } = req.body;
 
@@ -115,7 +116,7 @@ router.post('/:eventId/projects', authenticate, async (req, res) => {
 });
 
 // DELETE /api/events/:eventId/projects/:projectId
-router.delete('/:eventId/projects/:projectId', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.delete('/:eventId/projects/:projectId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const project = await prisma.project.findUnique({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });

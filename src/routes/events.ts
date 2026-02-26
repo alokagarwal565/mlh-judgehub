@@ -144,7 +144,23 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 1. Find all teams and judges associated with this event before deletion
+    // 1. Check if event is active, and deactivate it
+    const eventToDelete = await prisma.event.findUnique({
+      where: { id }
+    });
+
+    if (!eventToDelete) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    if (eventToDelete.isActive) {
+      await prisma.event.update({
+        where: { id },
+        data: { isActive: false }
+      });
+    }
+
+    // 2. Find all teams and judges associated with this event before deletion
     const projects = await prisma.project.findMany({
       where: { eventId: id },
       select: { teamId: true, teamNumber: true }
@@ -171,7 +187,7 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
     const sampleUserIds = sampleUsers.map(u => u.id);
     const userIdsToDelete = [...new Set([...teamUserIds, ...judgeUserIds, ...sampleUserIds])];
 
-    // 2. Delete the event and all associated records
+    // 3. Delete the event and all associated records
     // We do manual cleanup for problematic intermediate tables that lack Project-side cascades
     await prisma.stackRankVote.deleteMany({ where: { set: { eventId: id } } });
     await prisma.trackNomination.deleteMany({ where: { set: { eventId: id } } });
@@ -179,10 +195,10 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
     await prisma.score.deleteMany({ where: { set: { eventId: id } } });
     await prisma.judgeSetProject.deleteMany({ where: { set: { eventId: id } } });
     
-    // Now safe to delete event (it will cascade to Projects, Tracks, and JudgeSets)
+    // Now safe to delete event (it will cascade to Projects, Tracks, JudgeSets, and AuditLogs)
     await prisma.event.delete({ where: { id } });
 
-    // 3. Cleanup associated users
+    // 4. Cleanup associated users
     // We only delete users who are roles 'TEAM' or 'JUDGE' to be safe
     
     if (userIdsToDelete.length > 0) {
@@ -202,6 +218,9 @@ router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
         }
       });
     }
+
+    const io = req.app.get('io');
+    io.emit('event:activeChanged', { eventId: null });
 
     res.json({ message: 'Event and associated users deleted' });
   } catch (err: any) {

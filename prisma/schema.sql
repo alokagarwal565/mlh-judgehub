@@ -43,6 +43,8 @@ CREATE TABLE "events" (
     CONSTRAINT "events_pkey" PRIMARY KEY ("id")
 );
 
+CREATE UNIQUE INDEX "events_is_active_key" ON "events"("is_active") WHERE "is_active" = true;
+
 CREATE TABLE "tracks" (
     "id"          TEXT NOT NULL DEFAULT gen_random_uuid(),
     "event_id"    TEXT NOT NULL,
@@ -189,11 +191,13 @@ CREATE TABLE "flags" (
 CREATE TABLE "audit_logs" (
     "id"          TEXT NOT NULL DEFAULT gen_random_uuid(),
     "user_id"     TEXT NOT NULL,
+    "event_id"    TEXT NOT NULL,
     "action"      TEXT NOT NULL,
     "entity_type" TEXT NOT NULL,
     "entity_id"   TEXT NOT NULL,
     "details"     TEXT,
     "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "audit_logs_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );

@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 import { generateLeaderboard, getTrackWinners, findTiedProjects, leaderboardToCsv } from '../engine/scoring.js';
 
 const router = Router();
 
 // GET /api/events/:eventId/results — Leaderboard
-router.get('/:eventId/results', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/results', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const leaderboard = await generateLeaderboard(req.params.eventId);
     res.json(leaderboard);
@@ -16,7 +17,7 @@ router.get('/:eventId/results', authenticate, requireRole('ADMIN'), async (req, 
 });
 
 // GET /api/events/:eventId/results/tracks — Track winners
-router.get('/:eventId/results/tracks', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/results/tracks', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const trackWinners = await getTrackWinners(req.params.eventId);
     res.json(trackWinners);
@@ -26,9 +27,15 @@ router.get('/:eventId/results/tracks', authenticate, requireRole('ADMIN'), async
 });
 
 // GET /api/events/:eventId/results/export — CSV export
-router.get('/:eventId/results/export', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/results/export', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
-    const leaderboard = await generateLeaderboard(req.params.eventId);
+    const excludeTrackWinners = req.query.excludeTrackWinners === 'true';
+    const excludeFlagged = req.query.excludeFlagged === 'true';
+    
+    const leaderboard = await generateLeaderboard(req.params.eventId, {
+      excludeTrackWinners,
+      excludeFlagged
+    });
     const csv = leaderboardToCsv(leaderboard);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="leaderboard.csv"');
@@ -39,7 +46,7 @@ router.get('/:eventId/results/export', authenticate, requireRole('ADMIN'), async
 });
 
 // POST /api/events/:eventId/results/rejudge — Trigger rejudge for tied teams
-router.post('/:eventId/results/rejudge', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/results/rejudge', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const tiedGroups = await findTiedProjects(req.params.eventId);
 
@@ -120,7 +127,7 @@ router.post('/:eventId/results/rejudge', authenticate, requireRole('ADMIN'), asy
 });
 
 // GET /api/events/:eventId/projects/:projectId/details — Detailed evaluations for a project
-router.get('/:eventId/projects/:projectId/details', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/projects/:projectId/details', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { eventId, projectId } = req.params;
 

@@ -42,8 +42,46 @@ router.post('/login', async (req, res) => {
     if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = signToken({ userId: user.id, email: user.email, role: user.role, name: user.name });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+
+    // Fetch active event
+    const activeEvent = await prisma.event.findFirst({
+      where: { isActive: true },
+      select: { id: true, name: true }
+    });
+
+    // If no active event, reject all non-admin logins
+    if (!activeEvent) {
+      if (user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'No event is currently active. Please contact an administrator.' });
+      }
+      // Admin can login even with no active event
+      const token = signToken({ userId: user.id, email: user.email, role: user.role, name: user.name });
+      return res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role }, activeEventId: null });
+    }
+
+    // For non-admin users, check if they're assigned to the active event
+    if (user.role !== 'ADMIN') {
+      if (user.role === 'JUDGE') {
+        // Check if judge has any JudgeSet in the active event
+        const hasAssignment = await prisma.judgeSet.count({
+          where: { judgeId: user.id, eventId: activeEvent.id }
+        });
+        if (hasAssignment === 0) {
+          return res.status(403).json({ error: `Your assigned event is not currently active.` });
+        }
+      } else if (user.role === 'TEAM') {
+        // Check if team has any Project in the active event
+        const hasProject = await prisma.project.count({
+          where: { teamId: user.id, eventId: activeEvent.id }
+        });
+        if (hasProject === 0) {
+          return res.status(403).json({ error: `You don't have a project in the currently active event.` });
+        }
+      }
+    }
+
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, name: user.name, activeEventId: activeEvent.id });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role }, activeEventId: activeEvent.id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

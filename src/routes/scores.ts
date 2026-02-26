@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 import { generateLeaderboard } from '../engine/scoring.js';
 
 const router = Router();
@@ -15,7 +16,7 @@ async function getActingJudgeId(req: any, setId: string): Promise<string> {
 }
 
 // POST /api/events/:eventId/sets/:setId/scores — Submit score for a project in a set
-router.post('/:eventId/sets/:setId/scores', authenticate, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
+router.post('/:eventId/sets/:setId/scores', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
     const { projectId, completion, originality, learning, design, technology, timeSpentSeconds } = req.body;
 

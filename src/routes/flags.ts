@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 import { runIntegrityChecks } from '../engine/integrity.js';
 
 const router = Router();
 
 // GET /api/events/:eventId/flags
-router.get('/:eventId/flags', authenticate, async (req, res) => {
+router.get('/:eventId/flags', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const flags = await prisma.flag.findMany({
       where: { eventId: req.params.eventId },
@@ -23,7 +24,7 @@ router.get('/:eventId/flags', authenticate, async (req, res) => {
 });
 
 // POST /api/events/:eventId/flags — Create flag
-router.post('/:eventId/flags', authenticate, async (req, res) => {
+router.post('/:eventId/flags', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const { projectId, reason } = req.body;
     const flag = await prisma.flag.create({
@@ -57,7 +58,7 @@ router.post('/:eventId/flags', authenticate, async (req, res) => {
 });
 
 // PUT /api/events/:eventId/flags/:flagId/edit-reason — Judges can edit their own flag's reason
-router.put('/:eventId/flags/:flagId/edit-reason', authenticate, async (req, res) => {
+router.put('/:eventId/flags/:flagId/edit-reason', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const { reason } = req.body;
     
@@ -100,7 +101,7 @@ router.put('/:eventId/flags/:flagId/edit-reason', authenticate, async (req, res)
 });
 
 // PUT /api/events/:eventId/flags/:flagId — Update flag
-router.put('/:eventId/flags/:flagId', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.put('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { status, adminNotes } = req.body;
     const flag = await prisma.flag.update({
@@ -172,7 +173,7 @@ router.put('/:eventId/flags/:flagId', authenticate, requireRole('ADMIN'), async 
 });
 
 // POST /api/events/:eventId/integrity-check — Run automated checks
-router.post('/:eventId/integrity-check', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/integrity-check', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const integrityFlags = await runIntegrityChecks(req.params.eventId);
 

@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { requireActiveEvent } from '../middleware/activeEventCheck.js';
 import { createSetsForEvent, assignNextSetToJudge, getAssignmentProgress } from '../engine/assignment.js';
 
 const router = Router();
 
 // POST /api/events/:eventId/assignments — Generate all sets
-router.post('/:eventId/assignments', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/assignments', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const totalSets = await createSetsForEvent(req.params.eventId);
     res.status(201).json({ message: 'Sets generated', totalSets });
@@ -16,7 +17,7 @@ router.post('/:eventId/assignments', authenticate, requireRole('ADMIN'), async (
 });
 
 // GET /api/events/:eventId/assignments — View all sets with status
-router.get('/:eventId/assignments', authenticate, async (req, res) => {
+router.get('/:eventId/assignments', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const sets = await prisma.judgeSet.findMany({
       where: { eventId: req.params.eventId },
@@ -63,7 +64,7 @@ router.get('/:eventId/assignments', authenticate, async (req, res) => {
 });
 
 // GET /api/events/:eventId/assignments/progress
-router.get('/:eventId/assignments/progress', authenticate, async (req, res) => {
+router.get('/:eventId/assignments/progress', authenticate, requireActiveEvent, async (req, res) => {
   try {
     const progress = await getAssignmentProgress(req.params.eventId);
     res.json(progress);
@@ -73,7 +74,7 @@ router.get('/:eventId/assignments/progress', authenticate, async (req, res) => {
 });
 
 // POST /api/events/:eventId/assignments/next — Judge requests next set
-router.post('/:eventId/assignments/next', authenticate, requireRole('JUDGE'), async (req, res) => {
+router.post('/:eventId/assignments/next', authenticate, requireActiveEvent, requireRole('JUDGE'), async (req, res) => {
   try {
     const judgeId = req.user!.userId;
 
@@ -116,7 +117,7 @@ router.post('/:eventId/assignments/next', authenticate, requireRole('JUDGE'), as
 });
 
 // GET /api/events/:eventId/assignments/my-sets — Judge's assigned sets
-router.get('/:eventId/assignments/my-sets', authenticate, requireRole('JUDGE'), async (req, res) => {
+router.get('/:eventId/assignments/my-sets', authenticate, requireActiveEvent, requireRole('JUDGE'), async (req, res) => {
   try {
     const sets = await prisma.judgeSet.findMany({
       where: {
@@ -145,7 +146,7 @@ router.get('/:eventId/assignments/my-sets', authenticate, requireRole('JUDGE'), 
 });
 
 // GET /api/events/:eventId/assignments/judge/:judgeId — Admin view's a judge's assigned sets
-router.get('/:eventId/assignments/judge/:judgeId', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/assignments/judge/:judgeId', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const sets = await prisma.judgeSet.findMany({
       where: {
@@ -175,7 +176,7 @@ router.get('/:eventId/assignments/judge/:judgeId', authenticate, requireRole('AD
 
 // GET /api/events/:eventId/assignments/idle-judges
 // Returns judges who have NO current IN_PROGRESS set for this event
-router.get('/:eventId/assignments/idle-judges', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.get('/:eventId/assignments/idle-judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { eventId } = req.params;
 
@@ -244,7 +245,7 @@ router.get('/:eventId/assignments/idle-judges', authenticate, requireRole('ADMIN
 
 // POST /api/events/:eventId/assignments/manual-assign
 // Admin manually assigns a specific UNASSIGNED set to a specific idle judge
-router.post('/:eventId/assignments/manual-assign', authenticate, requireRole('ADMIN'), async (req, res) => {
+router.post('/:eventId/assignments/manual-assign', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
   try {
     const { eventId } = req.params;
     const { setId, judgeId } = req.body;

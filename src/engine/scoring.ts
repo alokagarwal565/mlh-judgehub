@@ -6,6 +6,9 @@ export interface LeaderboardEntry {
   teamName: string;
   teamNumber: string | null;
   roomNumber: string | null;
+  leaderName: string | null;
+  phone: string | null;
+  email: string;
   projectStatus: string;
   stackPoints: number;
   totalMarks: number;
@@ -15,15 +18,31 @@ export interface LeaderboardEntry {
   tieBreakerRank?: number;
 }
 
+export interface LeaderboardOptions {
+  excludeTrackWinners?: boolean;
+  excludeFlagged?: boolean;
+}
+
 /**
- * Generate full leaderboard for an event.
+ * Generate full leaderboard for an event with optional filters.
  * Priority: stackPoints DESC → totalMarks DESC
  */
-export async function generateLeaderboard(eventId: string): Promise<LeaderboardEntry[]> {
+export async function generateLeaderboard(eventId: string, options?: LeaderboardOptions): Promise<LeaderboardEntry[]> {
+  // Get track winners if needed to filter them out
+  let trackWinnerProjectIds: Set<string> = new Set();
+  if (options?.excludeTrackWinners) {
+    const trackWinners = await getTrackWinners(eventId);
+    trackWinnerProjectIds = new Set(
+      trackWinners
+        .map(t => t.winner?.projectId)
+        .filter(Boolean) as string[]
+    );
+  }
+
   const projects = await prisma.project.findMany({
     where: { eventId },
     include: {
-      team: { select: { name: true, phone: true } },
+      team: { select: { name: true, phone: true, email: true } },
       stackRankVotes: {
         include: { set: true }
       },
@@ -33,7 +52,16 @@ export async function generateLeaderboard(eventId: string): Promise<LeaderboardE
     }
   });
 
-  const entries: LeaderboardEntry[] = projects.map(project => {
+  // Apply filters
+  let filteredProjects = projects;
+  if (options?.excludeTrackWinners) {
+    filteredProjects = filteredProjects.filter(p => !trackWinnerProjectIds.has(p.id));
+  }
+  if (options?.excludeFlagged) {
+    filteredProjects = filteredProjects.filter(p => p.status !== 'FLAGGED');
+  }
+
+  const entries: LeaderboardEntry[] = filteredProjects.map(project => {
     const stackPoints = project.stackRankVotes
       .filter(v => v.set.setNumber !== 0 && v.set.status === 'COMPLETED')
       .reduce((sum, v) => sum + v.points, 0);
@@ -51,6 +79,9 @@ export async function generateLeaderboard(eventId: string): Promise<LeaderboardE
       teamName: project.team.name,
       teamNumber: project.teamNumber,
       roomNumber: project.roomNumber,
+      leaderName: project.leaderName,
+      phone: project.team.phone,
+      email: project.team.email,
       projectStatus: project.status,
       stackPoints,
       totalMarks,
@@ -180,9 +211,9 @@ export async function findTiedProjects(eventId: string): Promise<string[][]> {
  * Export leaderboard as CSV string.
  */
 export function leaderboardToCsv(entries: LeaderboardEntry[]): string {
-  const header = 'Rank,Team,Project,Room No.,Stack Points,Total Marks,Times Evaluated,Tied';
+  const header = 'Rank,Team Name,Team No.,Project Title,Room No.,Leader Name,Phone,Email,Stack Points,Total Marks,Times Evaluated,Tied';
   const rows = entries.map(e =>
-    `${e.rank},"${e.teamName}","${e.projectTitle}","${e.roomNumber || ''}",${e.stackPoints},${e.totalMarks},${e.timesEvaluated},${e.isTied}`
+    `${e.rank},"${e.teamName}","${e.teamNumber || ''}","${e.projectTitle}","${e.roomNumber || ''}","${e.leaderName || ''}","${e.phone || ''}","${e.email}",${e.stackPoints},${e.totalMarks},${e.timesEvaluated},${e.isTied}`
   );
   return [header, ...rows].join('\n');
 }
