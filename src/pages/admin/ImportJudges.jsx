@@ -26,6 +26,7 @@ export default function AdminImportJudges() {
 
   const handleImport = async () => {
     setLoading(true);
+    showLoader('Importing judges...');
     try {
       const res = await api.post(`/events/${eventId}/judges/import`, { csvData: csv });
       setResult(res.data);
@@ -33,6 +34,7 @@ export default function AdminImportJudges() {
       toastError(err.response?.data?.error || 'Import failed');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 

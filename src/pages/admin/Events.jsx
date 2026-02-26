@@ -234,7 +234,7 @@ export default function AdminEvents() {
         </div>
       )}
 
-      <div style={{display: 'grid', gap: 24}}>
+      <div style={{display: 'grid', gap: 24, marginTop: showForm ? 40 : 0}}>
         {events.length === 0 && !showForm && (
           <div className="empty-state" style={{padding: '80px 20px'}}>
             <div style={{fontSize: 48, marginBottom: 16}}>📅</div>

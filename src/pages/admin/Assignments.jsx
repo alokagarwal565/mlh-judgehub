@@ -153,11 +153,6 @@ export default function AdminAssignments() {
         <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
           <h1>Assignments</h1>
           <div className="flex gap-2 items-center">
-            {events.length > 1 && (
-              <select className="form-input" style={{width:'auto'}} value={eventId} onChange={e => setEventId(e.target.value)}>
-                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-              </select>
-            )}
             <div style={{display:'flex', alignItems:'center', gap:8}}>
               {isJudging && (
                 <span style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4}}>

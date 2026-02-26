@@ -26,6 +26,7 @@ export default function AdminImportTeams() {
 
   const handleImport = async () => {
     setLoading(true);
+    showLoader('Importing teams...');
     try {
       const res = await api.post(`/events/${eventId}/projects/import`, { csvData: csv });
       setResult(res.data);
@@ -33,6 +34,7 @@ export default function AdminImportTeams() {
       toastError(err.response?.data?.error || 'Import failed');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 
