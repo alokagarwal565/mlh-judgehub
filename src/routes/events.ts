@@ -120,6 +120,25 @@ router.post('/:id/activate', authenticate, requireRole('ADMIN'), async (req, res
   }
 });
 
+// POST /api/events/:id/deactivate — Deactivate an event
+router.post('/:id/deactivate', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const event = await (prisma.event as any).update({
+      where: { id },
+      data: { isActive: false }
+    });
+
+    const io = req.app.get('io');
+    io.emit('event:activeChanged', { eventId: null });
+
+    res.json(event);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/events/:id
 router.delete('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
