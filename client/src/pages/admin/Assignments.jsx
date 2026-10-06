@@ -186,6 +186,18 @@ export default function AdminAssignments() {
     return `${sec}s`;
   };
 
+  const cleanRoom = (room) => {
+    if (!room) return '—';
+    const normalized = room.replace(/^(r\.|rm\.?|room)\s*/i, '').trim();
+    return normalized ? `Room ${normalized}` : room;
+  };
+
+  const cleanRoomBadge = (room) => {
+    if (!room) return '—';
+    const normalized = room.replace(/^(r\.|rm\.?|room)\s*/i, '').trim();
+    return normalized ? `Rm ${normalized}` : room;
+  };
+
   const filterSet = (set) => {
     const q = search.toLowerCase().trim();
     if (statusFilter !== 'ALL' && set.status !== statusFilter) return false;
@@ -620,8 +632,25 @@ export default function AdminAssignments() {
                                           </span>
                                         )}
                                         {set.recentLocation && (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--text-secondary)' }}>
-                                            <MapPin size={11} /> {set.recentLocation.startsWith('Room') ? set.recentLocation : `Room ${set.recentLocation}`}
+                                          <span
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: 3,
+                                              color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-secondary)',
+                                              fontWeight: set.locationStatus === 'ACTIVE' ? 600 : 400
+                                            }}
+                                            title={
+                                              set.locationStatus === 'ACTIVE'
+                                                ? `Currently evaluating in ${cleanRoom(set.recentLocation)}`
+                                                : `Last room evaluated: ${cleanRoom(set.recentLocation)}`
+                                            }
+                                          >
+                                            <MapPin size={11} style={{ color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-tertiary)' }} />
+                                            <span>
+                                              {set.locationStatus === 'ACTIVE' ? 'Now: ' : 'Last: '}
+                                              {cleanRoom(set.recentLocation)}
+                                            </span>
                                           </span>
                                         )}
                                       </div>
@@ -676,41 +705,107 @@ export default function AdminAssignments() {
 
                             {/* Projects In Set List */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {set.projects?.map((sp, idx) => (
-                                <div
-                                  key={sp.projectId}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    fontSize: 12,
-                                    padding: '4px 6px',
-                                    borderRadius: 'var(--radius-xs)',
-                                    background: 'rgba(255, 255, 255, 0.015)'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1, paddingRight: 8 }}>
-                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 11, minWidth: 16 }}>
-                                      {idx + 1}.
-                                    </span>
-                                    <span style={{ fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {sp.project?.team?.name || sp.project?.title}
-                                    </span>
-                                    {sp.project?.teamNumber && (
-                                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                                        ({sp.project.teamNumber})
-                                      </span>
-                                    )}
-                                  </div>
+                              {(() => {
+                                const scoredProjectIds = new Set(set.scores?.map((s) => s.projectId) || []);
+                                const activePid = set.activeProjectId || (isSetInProgress ? set.projects?.find((p) => !scoredProjectIds.has(p.projectId))?.projectId : null);
 
-                                  <span
-                                    className="apple-badge apple-badge-default apple-badge-sm"
-                                    style={{ flexShrink: 0, fontSize: 10, padding: '1px 6px' }}
-                                  >
-                                    {sp.project?.roomNumber ? `R.${sp.project.roomNumber}` : '—'}
-                                  </span>
-                                </div>
-                              ))}
+                                return set.projects?.map((sp, idx) => {
+                                  const isScored = scoredProjectIds.has(sp.projectId);
+                                  const isActive = isSetInProgress && sp.projectId === activePid;
+
+                                  return (
+                                    <div
+                                      key={sp.projectId}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        fontSize: 12,
+                                        padding: '4px 8px',
+                                        borderRadius: 'var(--radius-xs)',
+                                        background: isActive
+                                          ? 'rgba(10, 132, 255, 0.08)'
+                                          : isScored
+                                          ? 'rgba(255, 255, 255, 0.015)'
+                                          : 'rgba(255, 255, 255, 0.02)',
+                                        border: isActive ? '1px solid rgba(10, 132, 255, 0.3)' : '1px solid transparent',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1, paddingRight: 8 }}>
+                                        <span
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            minWidth: 16,
+                                            fontSize: 11,
+                                            color: isScored
+                                              ? 'var(--accent-success)'
+                                              : isActive
+                                              ? 'var(--accent)'
+                                              : 'var(--text-tertiary)',
+                                            fontWeight: isActive ? 700 : 400
+                                          }}
+                                        >
+                                          {isScored ? (
+                                            <Check size={12} strokeWidth={2.5} />
+                                          ) : isActive ? (
+                                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+                                          ) : (
+                                            `${idx + 1}.`
+                                          )}
+                                        </span>
+                                        <span
+                                          style={{
+                                            fontWeight: isActive ? 600 : 500,
+                                            color: isScored
+                                              ? 'var(--text-secondary)'
+                                              : isActive
+                                              ? 'var(--text-primary)'
+                                              : 'var(--text-primary)',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {sp.project?.team?.name || sp.project?.title}
+                                        </span>
+                                        {sp.project?.teamNumber && (
+                                          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                            ({sp.project.teamNumber})
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                                        {isActive && (
+                                          <span
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 700,
+                                              color: 'var(--accent)',
+                                              background: 'rgba(10, 132, 255, 0.15)',
+                                              padding: '1px 5px',
+                                              borderRadius: 4,
+                                              textTransform: 'uppercase',
+                                              letterSpacing: '0.04em'
+                                            }}
+                                          >
+                                            Now
+                                          </span>
+                                        )}
+                                        <span
+                                          className={`apple-badge ${isScored ? 'apple-badge-success' : isActive ? 'apple-badge-primary' : 'apple-badge-default'} apple-badge-sm`}
+                                          style={{ fontSize: 10, padding: '1px 6px' }}
+                                        >
+                                          {cleanRoomBadge(sp.project?.roomNumber)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </div>
 
                             {/* Card Footer Actions */}

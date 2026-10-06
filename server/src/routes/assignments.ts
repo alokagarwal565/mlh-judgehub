@@ -40,22 +40,29 @@ router.get('/:eventId/assignments', authenticate, requireActiveEvent, async (req
     // Enriched response for judge recent tracking
     const enriched = sets.map(set => {
       let recentLocation = null;
+      let locationStatus = null; // 'ACTIVE' | 'LAST'
+      let activeProjectId = null;
+
       if ((set.status === 'IN_PROGRESS' || set.status === 'COMPLETED') && set.projects.length > 0) {
         const scoredIds = new Set(set.scores.map(s => s.projectId));
         const projects = set.projects.map(p => p.project);
         
-        // Find first project without score (current/next)
+        // Find first project without score (currently evaluating)
         const nextProject = projects.find(p => !scoredIds.has(p.id));
         
         if (nextProject && set.status === 'IN_PROGRESS') {
           recentLocation = nextProject.roomNumber || 'Unknown';
+          locationStatus = 'ACTIVE';
+          activeProjectId = nextProject.id;
         } else {
           // Find last project with score
           const lastProject = [...projects].reverse().find(p => scoredIds.has(p.id));
-          recentLocation = lastProject?.roomNumber || 'Finished';
+          recentLocation = lastProject?.roomNumber || null;
+          locationStatus = 'LAST';
+          activeProjectId = null;
         }
       }
-      return { ...set, recentLocation };
+      return { ...set, recentLocation, locationStatus, activeProjectId };
     });
 
     res.json(enriched);
