@@ -1512,3 +1512,91 @@ body {
 .apple-custom-select-menu::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* ==========================================================================
+   MLH Assignments 3-Column Matrix
+   ========================================================================== */
+
+.mlh-assignments-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .mlh-assignments-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mlh-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mlh-column-header {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+
+.mlh-column-header.col-1 {
+  border-top: 3px solid #30d158;
+}
+
+.mlh-column-header.col-2 {
+  border-top: 3px solid #0a84ff;
+}
+
+.mlh-column-header.col-3 {
+  border-top: 3px solid #bf5af2;
+}
+
+.mlh-column-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mlh-set-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mlh-set-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.mlh-set-card.status-completed {
+  border-left: 4px solid var(--accent-success);
+}
+
+.mlh-set-card.status-in-progress {
+  border-left: 4px solid var(--accent-warning);
+}
+
+.mlh-set-card.status-unassigned {
+  border-left: 4px solid rgba(255, 255, 255, 0.15);
+}
+
+.mlh-set-card.status-tie-breaker {
+  border-left: 4px solid #ff9f0a;
+}
+

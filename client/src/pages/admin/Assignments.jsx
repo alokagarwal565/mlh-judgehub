@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { useLoader } from '../../context/LoaderContext';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
@@ -18,120 +19,259 @@ import {
   Clock,
   Eye,
   User,
-  Plus
+  Users,
+  Plus,
+  AlertTriangle,
+  Lock,
+  Trophy,
+  Phone,
+  MapPin,
+  X,
+  Check
 } from '../../components/ui/icons';
 
+const MLH_COLUMNS = [
+  { id: 1, name: 'Set 1', round: 'Round 1', color: '#30d158', bg: 'rgba(48, 209, 88, 0.12)', border: 'rgba(48, 209, 88, 0.3)' },
+  { id: 2, name: 'Set 2', round: 'Round 2', color: '#0a84ff', bg: 'rgba(10, 132, 255, 0.12)', border: 'rgba(10, 132, 255, 0.3)' },
+  { id: 3, name: 'Set 3', round: 'Round 3', color: '#bf5af2', bg: 'rgba(191, 90, 242, 0.12)', border: 'rgba(191, 90, 242, 0.3)' }
+];
+
 export default function AdminAssignments() {
-  const { success, error: toastError } = useToast();
+  const { error: toastError, success: toastSuccess } = useToast();
   const { activeEvent } = useActiveEvent();
+  const { showLoader, hideLoader } = useLoader();
   const navigate = useNavigate();
 
+  const [events, setEvents] = useState([]);
   const [eventId, setEventId] = useState('');
   const [sets, setSets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Manual assign drawer/modal
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [idleJudges, setIdleJudges] = useState([]);
+  const [selectedJudge, setSelectedJudge] = useState(null);
   const [selectedSet, setSelectedSet] = useState(null);
-  const [selectedJudgeId, setSelectedJudgeId] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [judgeSearch, setJudgeSearch] = useState('');
 
   useEffect(() => {
     if (activeEvent) {
       setEventId(activeEvent.id);
     } else {
       api.get('/events').then((r) => {
+        setEvents(r.data);
         if (r.data.length > 0) setEventId(r.data[0].id);
-      });
+      }).catch(() => {});
     }
   }, [activeEvent]);
 
+  const currentEvent = useMemo(() => {
+    return activeEvent || events.find((e) => e.id === eventId);
+  }, [activeEvent, events, eventId]);
+
+  const isJudging = currentEvent?.status === 'JUDGING';
+
   const loadSets = () => {
-    if (eventId) {
-      api.get(`/events/${eventId}/assignments`).then((r) => setSets(r.data)).catch(() => {});
-    }
+    if (!eventId) return;
+    showLoader('Loading assignments...');
+    api.get(`/events/${eventId}/assignments`)
+      .then((r) => setSets(r.data || []))
+      .catch(() => {})
+      .finally(() => hideLoader());
+  };
+
+  const loadIdleJudges = () => {
+    if (!eventId) return;
+    api.get(`/events/${eventId}/assignments/idle-judges`)
+      .then((r) => setIdleJudges(r.data || []))
+      .catch(() => {});
   };
 
   useEffect(() => {
-    loadSets();
+    if (eventId) {
+      loadSets();
+      loadIdleJudges();
+    }
   }, [eventId]);
 
-  const generateSets = async () => {
+  const handleGenerate = async () => {
+    if (isJudging) {
+      if (!window.confirm('Judging is currently in progress! Regenerating assignments may disrupt active scoring. Are you sure you want to proceed?')) {
+        return;
+      }
+    }
     setLoading(true);
     try {
       const res = await api.post(`/events/${eventId}/assignments`);
-      success(`Generated ${res.data.totalSets} evaluation sets successfully!`);
+      toastSuccess(`Generated ${res.data.totalSets || 'all'} evaluation sets successfully!`);
       loadSets();
+      loadIdleJudges();
     } catch (err) {
-      toastError(err.response?.data?.error || 'Failed to partition sets');
+      toastError(err.response?.data?.error || 'Failed to generate assignments');
     } finally {
       setLoading(false);
     }
   };
 
-  const openManualAssign = (s) => {
-    setSelectedSet(s);
-    setSelectedJudgeId('');
-    api.get(`/events/${eventId}/assignments/idle-judges`).then((r) => setIdleJudges(r.data)).catch(() => {});
+  const openManualAssign = (preselectedSet = null) => {
+    setSelectedSet(preselectedSet);
+    setSelectedJudge(null);
+    setJudgeSearch('');
+    loadIdleJudges();
     setShowAssignModal(true);
   };
 
   const handleManualAssign = async () => {
-    if (!selectedJudgeId || !selectedSet) return;
+    if (!selectedJudge || !selectedSet) return;
     setAssigning(true);
     try {
       await api.post(`/events/${eventId}/assignments/manual-assign`, {
         setId: selectedSet.id,
-        judgeId: selectedJudgeId,
+        judgeId: selectedJudge.id
       });
-      success(`Set #${selectedSet.setNumber} assigned successfully.`);
+      toastSuccess(`Set #${selectedSet.setNumber} assigned to ${selectedJudge.name}`);
       setShowAssignModal(false);
+      setSelectedJudge(null);
+      setSelectedSet(null);
       loadSets();
+      loadIdleJudges();
     } catch (err) {
-      toastError(err.response?.data?.error || 'Failed to assign judge');
+      toastError(err.response?.data?.error || 'Assignment failed');
     } finally {
       setAssigning(false);
     }
   };
 
   const handleUnassign = async (setId) => {
+    if (!window.confirm('Are you sure you want to unassign this judge?')) return;
     try {
       await api.post(`/events/${eventId}/assignments/unassign`, { setId });
-      success('Judge unassigned from set');
+      toastSuccess('Judge unassigned from set');
       loadSets();
+      loadIdleJudges();
     } catch (err) {
       toastError(err.response?.data?.error || 'Failed to unassign judge');
     }
   };
 
-  const filteredSets = sets.filter((s) => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      s.setNumber?.toString().includes(q) ||
-      s.judge?.name?.toLowerCase().includes(q) ||
-      s.projects?.some((sp) => sp.project?.title?.toLowerCase().includes(q));
+  const getSetRange = (projects) => {
+    if (!projects || projects.length === 0) return '';
+    const sorted = [...projects].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const firstMatch = sorted[0]?.project?.teamNumber?.match(/\d+/);
+    if (!firstMatch) {
+      return `${sorted.length} projects`;
+    }
+    const start = parseInt(firstMatch[0], 10);
+    const end = start + sorted.length - 1;
+    return `#${start} – #${end}`;
+  };
 
-    const matchStatus = statusFilter === 'ALL' || s.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const fmtTime = (s) => {
+    if (!s || s <= 0) return null;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  };
+
+  const filterSet = (set) => {
+    const q = search.toLowerCase().trim();
+    if (statusFilter !== 'ALL' && set.status !== statusFilter) return false;
+    if (!q) return true;
+    if (String(set.setNumber || '').toLowerCase().includes(q)) return true;
+    if (set.judge?.name?.toLowerCase().includes(q)) return true;
+    if (getSetRange(set.projects).toLowerCase().includes(q)) return true;
+    return set.projects?.some((sp) => {
+      const title = (sp.project?.title || '').toLowerCase();
+      const team = (sp.project?.team?.name || '').toLowerCase();
+      const num = (sp.project?.teamNumber || '').toLowerCase();
+      const room = (sp.project?.roomNumber || '').toLowerCase();
+      return title.includes(q) || team.includes(q) || num.includes(q) || room.includes(q);
+    });
+  };
+
+  // Status counts
+  const totalCount = sets.length;
+  const inProgressCount = sets.filter((s) => s.status === 'IN_PROGRESS').length;
+  const completedCount = sets.filter((s) => s.status === 'COMPLETED').length;
+  const unassignedCount = sets.filter((s) => s.status === 'UNASSIGNED').length;
+  const idleJudgesCount = idleJudges.filter((j) => j.isIdle).length;
+
+  // Tie breaker sets (setNumber === 0 or column === 0)
+  const tieBreakers = sets.filter((s) => s.setNumber === 0 || s.column === 0);
+
+  if (!activeEvent && events.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Judging Floor Assignments" subtitle="MLH 3-round evaluation matrix" />
+        <Card style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <EmptyState
+            icon={Network}
+            title="No Active Event"
+            description="Please mark an event as Active in Events & Setup to manage judging assignments."
+            action={
+              <Button variant="primary" onClick={() => navigate('/admin/events')}>
+                Go to Events
+              </Button>
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader
         title="Judging Floor Assignments"
-        subtitle={`Partitioning and evaluator allocation for ${activeEvent?.name || 'event'}`}
+        subtitle={`MLH 3-round evaluation matrix and evaluator allocation for ${currentEvent?.name || 'event'}`}
         actions={
-          <Button
-            variant="primary"
-            size="md"
-            icon={Sparkles}
-            loading={loading}
-            onClick={generateSets}
-          >
-            Generate Sets
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {isJudging && (
+              <Badge variant="warning" dot pulse icon={Lock}>
+                Judging In Progress
+              </Badge>
+            )}
+
+            <Button
+              variant="secondary"
+              icon={Users}
+              onClick={() => openManualAssign()}
+              title="Manually allocate idle evaluators to sets"
+            >
+              Manual Assign
+              {idleJudgesCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    padding: '1px 7px',
+                    borderRadius: 12,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: 'var(--accent)',
+                    color: '#fff'
+                  }}
+                >
+                  {idleJudgesCount} idle
+                </span>
+              )}
+            </Button>
+
+            <Button
+              variant="primary"
+              icon={Sparkles}
+              loading={loading}
+              onClick={handleGenerate}
+              title={isJudging ? 'Regenerating sets while judging is active requires confirmation' : 'Generate partitioned judging sets'}
+            >
+              Generate Sets
+            </Button>
+          </div>
         }
       />
 
@@ -140,161 +280,683 @@ export default function AdminAssignments() {
         <SearchField
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search sets by judge, project, number..."
+          placeholder="Search judge, team, room number, or team range..."
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter:</span>
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            size="sm"
-            width={170}
-            options={[
-              { value: 'ALL', label: `All Sets (${sets.length})` },
-              { value: 'UNASSIGNED', label: 'Unassigned' },
-              { value: 'IN_PROGRESS', label: 'In Progress' },
-              { value: 'COMPLETED', label: 'Completed' }
-            ]}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {[
+            { id: 'ALL', label: `All (${totalCount})` },
+            { id: 'IN_PROGRESS', label: `In Progress (${inProgressCount})` },
+            { id: 'COMPLETED', label: `Completed (${completedCount})` },
+            { id: 'UNASSIGNED', label: `Unassigned (${unassignedCount})` }
+          ].map((item) => {
+            const isActive = statusFilter === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setStatusFilter(item.id)}
+                style={{
+                  height: 32,
+                  padding: '0 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 'var(--font-size-xs)',
+                  fontWeight: isActive ? 600 : 500,
+                  cursor: 'pointer',
+                  border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  background: isActive ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.04)',
+                  color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                  transition: 'all var(--transition-fast)'
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Grid of Sets */}
-      {filteredSets.length === 0 ? (
+      {sets.length === 0 ? (
         <Card>
           <EmptyState
             icon={Network}
-            title="No Sets Found"
-            description={search ? "No set matches your search filter." : "Click 'Generate Sets' to create partitioned judging assignments."}
+            title="No Evaluation Sets Generated"
+            description="Generate partitioned evaluation sets to allocate judging blocks across 3 waves as per the MLH protocol."
             action={
-              sets.length === 0 && (
-                <Button variant="primary" icon={Sparkles} onClick={generateSets}>
-                  Generate Initial Sets
-                </Button>
-              )
+              <Button variant="primary" icon={Sparkles} onClick={handleGenerate} loading={loading}>
+                Generate Initial Sets
+              </Button>
             }
           />
         </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18 }}>
-          {filteredSets.map((s) => (
-            <Card
-              key={s.id}
-              className="is-interactive"
-              title={`Set #${s.setNumber}`}
-              subtitle={`${s.projects?.length || 0} projects assigned`}
-              action={
-                s.status === 'COMPLETED' ? (
-                  <Badge variant="success" icon={CheckCircle2}>Complete</Badge>
-                ) : s.status === 'IN_PROGRESS' ? (
-                  <Badge variant="warning" dot pulse>In Progress</Badge>
-                ) : (
-                  <Badge variant="default">Unassigned</Badge>
-                )
-              }
+        <>
+          {/* ── Tie Breaker Section (Round 0) ── */}
+          {tieBreakers.length > 0 && (
+            <div
+              style={{
+                marginBottom: 24,
+                padding: 16,
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(255, 159, 10, 0.05)',
+                border: '1px solid rgba(255, 159, 10, 0.35)',
+                boxShadow: '0 4px 20px rgba(255, 159, 10, 0.08)'
+              }}
             >
-              {/* Judge assignment info */}
-              <div style={{ marginBottom: 14, padding: '10px 12px', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: 2 }}>
-                  Evaluator
-                </div>
-                {s.judge ? (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>
-                      {s.judge.name}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Trophy size={18} style={{ color: '#ff9f0a' }} />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Tie Breaker Evaluation (Round 0)
+                    </h3>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Targeted evaluation blocks generated to resolve tied podium positions
                     </span>
-                    {s.status !== 'COMPLETED' && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleUnassign(s.id); }}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-danger)', fontSize: 11, cursor: 'pointer' }}
-                      >
-                        Unassign
-                      </button>
-                    )}
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>None</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); openManualAssign(s); }}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      + Assign Judge
-                    </button>
-                  </div>
-                )}
+                </div>
+                <Badge variant="warning" dot pulse>
+                  Action Required
+                </Badge>
               </div>
 
-              {/* Projects in set list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-                {s.projects?.map((sp, idx) => (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 14 }}>
+                {tieBreakers.map((set) => (
                   <div
-                    key={sp.projectId}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      fontSize: 'var(--font-size-xs)',
-                      padding: '4px 0'
-                    }}
+                    key={set.id}
+                    className="mlh-set-card status-tie-breaker"
+                    style={{ background: 'var(--bg-surface-elevated)' }}
                   >
-                    <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '75%' }}>
-                      {idx + 1}. {sp.project?.title}
-                    </span>
-                    <span className="apple-badge apple-badge-default apple-badge-sm">
-                      {sp.project?.roomNumber ? `R.${sp.project.roomNumber}` : '—'}
-                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                          Tie Breaker @ Position #{set.baseRank || '?'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                          {set.projects?.length || 0} contending projects
+                        </div>
+                      </div>
+                      <Badge
+                        variant={set.status === 'COMPLETED' ? 'success' : set.status === 'IN_PROGRESS' ? 'warning' : 'danger'}
+                        size="sm"
+                      >
+                        {set.status}
+                      </Badge>
+                    </div>
+
+                    {set.judge ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <User size={14} style={{ color: 'var(--accent)' }} />
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{set.judge.name}</span>
+                        {set.judge.phone && (
+                          <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>· {set.judge.phone}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent-danger)' }}>
+                        <AlertTriangle size={14} />
+                        <span>No judge assigned</span>
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, background: 'rgba(255, 255, 255, 0.02)', padding: '6px 8px', borderRadius: 'var(--radius-xs)' }}>
+                      {set.projects?.map((sp) => sp.project?.team?.name || sp.project?.title).join(' · ')}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+                      {set.status !== 'COMPLETED' && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={Plus}
+                          onClick={() => openManualAssign(set)}
+                        >
+                          Assign Judge
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Eye}
+                        onClick={() => navigate(`/admin/sets/${set.id}`)}
+                      >
+                        Details
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
 
-              <div style={{ paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={Eye}
-                  onClick={() => navigate(`/admin/sets/${s.id}`)}
-                >
-                  Set Detail
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+          {/* ── MLH 3-Column Wave Board (Set 1, Set 2, Set 3) ── */}
+          <div className="mlh-assignments-grid">
+            {MLH_COLUMNS.map((colConfig) => {
+              const col = colConfig.id;
+              const colSets = sets
+                .filter((s) => s.column === col && s.setNumber > 0)
+                .sort((a, b) => (a.setNumber || 0) - (b.setNumber || 0));
+
+              const filteredSets = colSets.filter(filterSet);
+              const completed = colSets.filter((s) => s.status === 'COMPLETED').length;
+              const inProgress = colSets.filter((s) => s.status === 'IN_PROGRESS').length;
+              const unassigned = colSets.filter((s) => s.status === 'UNASSIGNED').length;
+              const progressPct = colSets.length > 0 ? Math.round((completed / colSets.length) * 100) : 0;
+
+              return (
+                <div key={col} className="mlh-column">
+                  {/* Column Header */}
+                  <div className={`mlh-column-header col-${col}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            background: colConfig.color,
+                            boxShadow: `0 0 8px ${colConfig.color}90`
+                          }}
+                        />
+                        <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+                          {colConfig.name}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: colConfig.color,
+                            background: colConfig.bg,
+                            border: `1px solid ${colConfig.border}`,
+                            padding: '1px 7px',
+                            borderRadius: 10
+                          }}
+                        >
+                          {colConfig.round}
+                        </span>
+                      </div>
+
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                        {search || statusFilter !== 'ALL'
+                          ? `${filteredSets.length}/${colSets.length} blocks`
+                          : `${colSets.length} blocks`}
+                      </span>
+                    </div>
+
+                    {/* Metric pills */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                      <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>
+                        ✓ {completed}
+                      </span>
+                      <span style={{ color: 'var(--accent-warning)', fontWeight: 600 }}>
+                        ⏳ {inProgress}
+                      </span>
+                      <span style={{ color: 'var(--text-tertiary)' }}>
+                        ○ {unassigned}
+                      </span>
+                      <span style={{ marginLeft: 'auto', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        {progressPct}%
+                      </span>
+                    </div>
+
+                    {/* Slim progress bar at bottom of header */}
+                    <div
+                      className="mlh-column-progress"
+                      style={{
+                        width: `${progressPct}%`,
+                        background: colConfig.color
+                      }}
+                    />
+                  </div>
+
+                  {/* Vertically Stacked Set Cards */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {filteredSets.length === 0 ? (
+                      <div
+                        style={{
+                          padding: '32px 16px',
+                          textAlign: 'center',
+                          color: 'var(--text-tertiary)',
+                          fontSize: 13,
+                          background: 'var(--bg-surface-elevated)',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px dashed var(--border-subtle)'
+                        }}
+                      >
+                        No matching blocks in {colConfig.name}
+                      </div>
+                    ) : (
+                      filteredSets.map((set) => {
+                        const totalTime = set.scores?.reduce((sum, sc) => sum + (sc.timeSpentSeconds || 0), 0);
+                        const isSetComplete = set.status === 'COMPLETED';
+                        const isSetInProgress = set.status === 'IN_PROGRESS';
+
+                        return (
+                          <div
+                            key={set.id}
+                            className={`mlh-set-card status-${set.status.toLowerCase().replace('_', '-')}`}
+                          >
+                            {/* Card Top: Set Identifier & Status */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
+                                    Set #{set.setNumber}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: 11,
+                                      fontWeight: 600,
+                                      padding: '2px 8px',
+                                      borderRadius: 6,
+                                      background: 'rgba(255, 255, 255, 0.05)',
+                                      color: 'var(--text-secondary)',
+                                      border: '1px solid var(--border-subtle)'
+                                    }}
+                                  >
+                                    Teams {getSetRange(set.projects)}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                  {set.projects?.length || 0} teams in this wave
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                                {isSetComplete ? (
+                                  <Badge variant="success" size="sm" icon={CheckCircle2}>
+                                    Complete
+                                  </Badge>
+                                ) : isSetInProgress ? (
+                                  <Badge variant="warning" size="sm" dot pulse>
+                                    In Progress
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="default" size="sm">
+                                    Unassigned
+                                  </Badge>
+                                )}
+
+                                {totalTime > 0 && (
+                                  <span
+                                    style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}
+                                    title="Total judging time spent"
+                                  >
+                                    <Clock size={12} />
+                                    {fmtTime(totalTime)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Evaluator / Judge Row */}
+                            <div
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: set.judge ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 159, 10, 0.04)',
+                                border: `1px solid ${set.judge ? 'var(--border-subtle)' : 'rgba(255, 159, 10, 0.2)'}`
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <User size={15} style={{ color: set.judge ? 'var(--accent)' : 'var(--text-tertiary)' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: set.judge ? 'var(--text-primary)' : 'var(--accent-warning)' }}>
+                                      {set.judge ? set.judge.name : 'No Evaluator Assigned'}
+                                    </div>
+                                    {set.judge && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                        {set.judge.phone && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                            <Phone size={11} /> {set.judge.phone}
+                                          </span>
+                                        )}
+                                        {set.recentLocation && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--text-secondary)' }}>
+                                            <MapPin size={11} /> {set.recentLocation.startsWith('Room') ? set.recentLocation : `Room ${set.recentLocation}`}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  {set.judge ? (
+                                    !isSetComplete && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUnassign(set.id)}
+                                        style={{
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: 'var(--accent-danger)',
+                                          fontSize: 11,
+                                          fontWeight: 500,
+                                          cursor: 'pointer',
+                                          padding: '2px 6px'
+                                        }}
+                                        title="Unassign judge from this set"
+                                      >
+                                        Unassign
+                                      </button>
+                                    )
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => openManualAssign(set)}
+                                      style={{
+                                        background: 'var(--accent)',
+                                        border: 'none',
+                                        color: '#fff',
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: '4px 10px',
+                                        borderRadius: 'var(--radius-xs)'
+                                      }}
+                                    >
+                                      + Assign
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Projects In Set List */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {set.projects?.map((sp, idx) => (
+                                <div
+                                  key={sp.projectId}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    fontSize: 12,
+                                    padding: '4px 6px',
+                                    borderRadius: 'var(--radius-xs)',
+                                    background: 'rgba(255, 255, 255, 0.015)'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1, paddingRight: 8 }}>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 11, minWidth: 16 }}>
+                                      {idx + 1}.
+                                    </span>
+                                    <span style={{ fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {sp.project?.team?.name || sp.project?.title}
+                                    </span>
+                                    {sp.project?.teamNumber && (
+                                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                        ({sp.project.teamNumber})
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <span
+                                    className="apple-badge apple-badge-default apple-badge-sm"
+                                    style={{ flexShrink: 0, fontSize: 10, padding: '1px 6px' }}
+                                  >
+                                    {sp.project?.roomNumber ? `R.${sp.project.roomNumber}` : '—'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Card Footer Actions */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                paddingTop: 10,
+                                borderTop: '1px solid var(--border-subtle)',
+                                marginTop: 'auto'
+                              }}
+                            >
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                                {set.scores?.length || 0}/{set.projects?.length || 0} scored
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {(isSetComplete || isSetInProgress) && set.judgeId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(`/admin/view-judge/${set.judgeId}/score/${set.id}`)}
+                                    className="apple-btn apple-btn-secondary apple-btn-sm"
+                                    style={{ fontSize: 11, height: 26, padding: '0 8px' }}
+                                    title="View live judge scoring screen"
+                                  >
+                                    Live View
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/admin/sets/${set.id}`)}
+                                  className="apple-btn apple-btn-ghost apple-btn-sm"
+                                  style={{ fontSize: 11, height: 26, padding: '0 8px' }}
+                                  title="Inspect and edit set scores"
+                                >
+                                  Set Detail →
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      {/* Manual Assign Judge Modal */}
+      {/* ── Manual Evaluator Allocation Modal with MLH Overlap Protection ── */}
       <Modal
         isOpen={showAssignModal}
         onClose={() => setShowAssignModal(false)}
-        title={`Assign Judge to Set #${selectedSet?.setNumber}`}
-        subtitle="Select an available evaluator from the idle pool"
+        title="Manual Evaluator Allocation"
+        subtitle="Assign an available judge to an unassigned set with automated conflict check"
+        maxWidth="780px"
         footer={
-          <>
-            <Button variant="ghost" onClick={() => setShowAssignModal(false)}>Cancel</Button>
-            <Button variant="primary" loading={assigning} disabled={!selectedJudgeId} onClick={handleManualAssign}>
-              Confirm Assignment
-            </Button>
-          </>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {selectedJudge && selectedSet ? (
+                <span>
+                  Assigning <strong>Col {selectedSet.column} · Set #{selectedSet.setNumber}</strong> ({getSetRange(selectedSet.projects)}) → <strong>{selectedJudge.name}</strong>
+                </span>
+              ) : (
+                <span>Select a judge and an unassigned set to continue</span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button variant="ghost" onClick={() => setShowAssignModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={assigning}
+                disabled={!selectedJudge || !selectedSet}
+                onClick={handleManualAssign}
+              >
+                Confirm Assignment
+              </Button>
+            </div>
+          </div>
         }
       >
-        <div style={{ marginBottom: 14 }}>
-          <Select
-            label={`Available Evaluators (${idleJudges.length})`}
-            value={selectedJudgeId}
-            onChange={(e) => setSelectedJudgeId(e.target.value)}
-            placeholder="-- Choose Judge --"
-            options={[
-              { value: '', label: '-- Choose Judge --' },
-              ...idleJudges.map((j) => ({
-                value: j.id,
-                label: `${j.name} (${j.completedSets || 0} completed sets)`
-              }))
-            ]}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, minHeight: 380 }}>
+          {/* Left Panel: Judges Selection */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderRight: '1px solid var(--border-subtle)', paddingRight: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
+                Evaluators ({idleJudges.length})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--accent-success)', fontWeight: 600 }}>
+                {idleJudges.filter((j) => j.isIdle).length} Idle
+              </span>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Filter judges..."
+              value={judgeSearch}
+              onChange={(e) => setJudgeSearch(e.target.value)}
+              className="apple-input is-sm"
+              style={{ width: '100%', marginBottom: 4 }}
+            />
+
+            <div style={{ overflowY: 'auto', maxHeight: 320, display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
+              {idleJudges
+                .filter((j) => !judgeSearch || j.name.toLowerCase().includes(judgeSearch.toLowerCase()))
+                .map((judge) => {
+                  const isSelected = selectedJudge?.id === judge.id;
+
+                  return (
+                    <div
+                      key={judge.id}
+                      onClick={() => setSelectedJudge(judge)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.03)',
+                        border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                        transition: 'all var(--transition-fast)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              background: judge.isIdle ? 'var(--accent-success)' : 'var(--accent-warning)',
+                              boxShadow: `0 0 6px ${judge.isIdle ? 'var(--accent-success)' : 'var(--accent-warning)'}80`,
+                              flexShrink: 0
+                            }}
+                          />
+                          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                            {judge.name}
+                          </span>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 10,
+                            background: judge.isIdle ? 'rgba(48, 209, 88, 0.12)' : 'rgba(255, 159, 10, 0.12)',
+                            color: judge.isIdle ? 'var(--accent-success)' : 'var(--accent-warning)'
+                          }}
+                        >
+                          {judge.isIdle ? 'Idle' : 'Busy'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, marginLeft: 16 }}>
+                        <span>{judge.completedSets || 0}/{judge.totalSets || 0} sets done</span>
+                        {judge.phone && <span>· {judge.phone}</span>}
+                        {judge.recentLocation && <span>· R.{judge.recentLocation}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* Right Panel: Unassigned Sets with Conflict Detection */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
+                Unassigned Sets
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                {sets.filter((s) => s.status === 'UNASSIGNED').length} available
+              </span>
+            </div>
+
+            {!selectedJudge ? (
+              <div
+                style={{
+                  height: 300,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--text-tertiary)',
+                  fontSize: 13,
+                  textAlign: 'center',
+                  border: '1px dashed var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: 20
+                }}
+              >
+                ← Select an evaluator to inspect conflict checks and assign a block
+              </div>
+            ) : (
+              <div style={{ overflowY: 'auto', maxHeight: 330, display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4 }}>
+                {(() => {
+                  const evalSet = new Set(selectedJudge.evaluatedProjectIds || []);
+                  const unassigned = sets.filter((s) => s.status === 'UNASSIGNED');
+
+                  if (unassigned.length === 0) {
+                    return (
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: 13, padding: '30px 10px', textAlign: 'center' }}>
+                        All judging sets have evaluators assigned!
+                      </div>
+                    );
+                  }
+
+                  return unassigned.map((set) => {
+                    const hasConflict = set.projects?.some((sp) => evalSet.has(sp.projectId));
+                    const isSelected = selectedSet?.id === set.id;
+
+                    return (
+                      <div
+                        key={set.id}
+                        onClick={() => !hasConflict && setSelectedSet(isSelected ? null : set)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          cursor: hasConflict ? 'not-allowed' : 'pointer',
+                          background: isSelected ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                          opacity: hasConflict ? 0.45 : 1,
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                            {set.column > 0 ? `Set ${set.column} (Wave ${set.column})` : 'Tie Breaker'} · Set #{set.setNumber}
+                          </span>
+
+                          {hasConflict ? (
+                            <span style={{ fontSize: 10, color: 'var(--accent-danger)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <AlertTriangle size={12} /> Conflict: Judged Earlier
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              Teams {getSetRange(set.projects)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.4 }}>
+                          {set.projects?.map((sp) => sp.project?.team?.name || sp.project?.title).join(' · ')}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
     </div>
