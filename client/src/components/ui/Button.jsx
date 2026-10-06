@@ -14,6 +14,7 @@ export function Button({
   ...props
 }) {
   const isDisabled = disabled || loading;
+  const iconSize = size === 'sm' ? 18 : size === 'lg' ? 22 : 20;
 
   return (
     <button
@@ -26,20 +27,19 @@ export function Button({
       {loading ? (
         <span className="apple-btn-spinner" aria-hidden="true" />
       ) : Icon && iconPosition === 'left' ? (
-        <Icon size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} className="apple-btn-icon" />
+        <Icon size={iconSize} className="apple-btn-icon" />
       ) : null}
 
       <span className="apple-btn-text">{children}</span>
 
       {!loading && Icon && iconPosition === 'right' && (
-        <Icon size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} className="apple-btn-icon" />
+        <Icon size={iconSize} className="apple-btn-icon" />
       )}
     </button>
   );
 }
 
 export default Button;
-
 
 export function IconButton({
   icon: Icon,
@@ -52,6 +52,8 @@ export function IconButton({
   onClick,
   ...props
 }) {
+  const iconSize = size === 'sm' ? 18 : size === 'lg' ? 22 : 20;
+
   return (
     <button
       type="button"
@@ -65,8 +67,9 @@ export function IconButton({
       {loading ? (
         <span className="apple-btn-spinner" aria-hidden="true" />
       ) : (
-        <Icon size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} />
+        <Icon size={iconSize} />
       )}
     </button>
   );
 }
+

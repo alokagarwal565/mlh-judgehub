@@ -1,7 +1,8 @@
 import React from 'react';
 
 function createIcon(svgPath, defaultSize = 20) {
-  return function Icon({ size = defaultSize, className = '', strokeWidth = 1.75, ...props }) {
+  return function Icon({ size = defaultSize, className = '', strokeWidth, style, ...props }) {
+    const effectiveStroke = strokeWidth !== undefined ? strokeWidth : (size < 18 ? 2.2 : 2.0);
     return (
       <svg
         width={size}
@@ -9,11 +10,12 @@ function createIcon(svgPath, defaultSize = 20) {
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth={strokeWidth}
+        strokeWidth={effectiveStroke}
         strokeLinecap="round"
         strokeLinejoin="round"
         className={`apple-icon ${className}`}
         aria-hidden="true"
+        style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle', ...style }}
         {...props}
       >
         {svgPath}
@@ -21,6 +23,7 @@ function createIcon(svgPath, defaultSize = 20) {
     );
   };
 }
+
 
 export const LayoutDashboard = createIcon(
   <>

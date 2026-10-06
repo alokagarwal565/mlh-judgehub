@@ -130,10 +130,11 @@ export default function AdminTracks() {
               subtitle={track.description || 'Special category award'}
               action={<Badge variant="purple" icon={Award}>Award</Badge>}
             >
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
-                <button
-                  type="button"
-                  className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+                <IconButton
+                  icon={Edit3}
+                  label="Edit Track"
+                  size="sm"
                   onClick={() => {
                     setEditingTrack(track);
                     setForm({
@@ -143,21 +144,17 @@ export default function AdminTracks() {
                     });
                     setShowModal(true);
                   }}
-                  title="Edit Track"
-                >
-                  <Edit3 size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                />
+                <IconButton
+                  icon={Trash2}
+                  label="Delete Track"
+                  size="sm"
+                  variant="danger"
                   onClick={() => setDeletingTrack(track)}
-                  title="Delete Track"
-                  style={{ color: 'var(--accent-danger)' }}
-                >
-                  <Trash2 size={14} />
-                </button>
+                />
               </div>
             </Card>
+
           ))}
         </div>
       )}

@@ -357,8 +357,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
+  width: 22px;
+  height: 22px;
+  color: var(--text-secondary);
   transition: var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.sidebar-item-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-item:hover .sidebar-item-icon,
@@ -399,7 +407,28 @@ body {
 .sidebar-footer-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+}
+
+.sidebar-footer-actions .apple-btn-icon-only {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.sidebar-footer-actions .apple-btn-icon-only:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.sidebar-footer-actions .apple-btn-icon-only svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* ==========================================================================
@@ -674,23 +703,87 @@ body {
   background: var(--accent-danger-hover);
 }
 
+.apple-btn-icon {
+  flex-shrink: 0;
+}
+
+.apple-btn-sm .apple-btn-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.apple-btn-md .apple-btn-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.apple-btn-lg .apple-btn-icon {
+  width: 22px;
+  height: 22px;
+}
+
 .apple-btn-icon-only {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text-secondary);
   transition: var(--transition-fast);
+  flex-shrink: 0;
 }
+
 .apple-btn-icon-only:hover:not(:disabled) {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-medium);
+  transform: translateY(-1px);
 }
-.apple-btn-icon-only.apple-btn-sm { width: 30px; height: 30px; }
-.apple-btn-icon-only.apple-btn-md { width: 38px; height: 38px; }
-.apple-btn-icon-only.apple-btn-lg { width: 46px; height: 46px; }
+
+.apple-btn-icon-only.apple-btn-sm {
+  width: 34px;
+  height: 34px;
+}
+
+.apple-btn-icon-only.apple-btn-sm svg {
+  width: 18px;
+  height: 18px;
+}
+
+.apple-btn-icon-only.apple-btn-md {
+  width: 40px;
+  height: 40px;
+}
+
+.apple-btn-icon-only.apple-btn-md svg {
+  width: 20px;
+  height: 20px;
+}
+
+.apple-btn-icon-only.apple-btn-lg {
+  width: 48px;
+  height: 48px;
+}
+
+.apple-btn-icon-only.apple-btn-lg svg {
+  width: 24px;
+  height: 24px;
+}
+
+.apple-btn-icon-only.apple-btn-danger {
+  color: var(--accent-danger);
+  border-color: rgba(255, 69, 58, 0.2);
+  background: rgba(255, 69, 58, 0.06);
+}
+
+.apple-btn-icon-only.apple-btn-danger:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.2);
+  border-color: var(--accent-danger);
+  color: #fff;
+}
+
 
 /* Inline Spinner */
 .apple-btn-spinner {

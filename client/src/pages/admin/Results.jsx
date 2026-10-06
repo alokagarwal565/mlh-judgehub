@@ -7,7 +7,7 @@ import Pagination, { usePagination } from '../../components/Pagination';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import { Button, IconButton } from '../../components/ui/Button';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import { SearchField } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
@@ -191,7 +191,14 @@ export default function AdminResults() {
       />
 
       {/* Top Navigation Tabs & Search Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 16,
+        marginBottom: 24,
+        flexWrap: 'wrap'
+      }}>
         <SegmentedControl
           value={tab}
           onChange={setTab}
@@ -202,32 +209,81 @@ export default function AdminResults() {
         />
 
         {tab === 'leaderboard' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <SearchField
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Filter teams, titles, rooms..."
-            />
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={hideTrackWinners}
-                onChange={(e) => setHideTrackWinners(e.target.checked)}
-                style={{ accentColor: 'var(--accent)' }}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            background: 'var(--bg-surface-elevated)',
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-subtle)'
+          }}>
+            <div style={{ width: 240 }}>
+              <SearchField
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search teams, titles, rooms..."
               />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setHideTrackWinners(!hideTrackWinners)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-pill)',
+                fontSize: 12,
+                fontWeight: 600,
+                border: `1px solid ${hideTrackWinners ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                background: hideTrackWinners ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.04)',
+                color: hideTrackWinners ? 'var(--accent)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none'
+              }}
+            >
+              <span style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: hideTrackWinners ? 'var(--accent)' : 'var(--text-tertiary)'
+              }} />
               <span>Hide Track Winners</span>
-            </label>
+            </button>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={hideFlagged}
-                onChange={(e) => setHideFlagged(e.target.checked)}
-                style={{ accentColor: 'var(--accent-danger)' }}
-              />
+            <button
+              type="button"
+              onClick={() => setHideFlagged(!hideFlagged)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-pill)',
+                fontSize: 12,
+                fontWeight: 600,
+                border: `1px solid ${hideFlagged ? 'var(--accent-danger)' : 'var(--border-subtle)'}`,
+                background: hideFlagged ? 'var(--accent-danger-tint)' : 'rgba(255, 255, 255, 0.04)',
+                color: hideFlagged ? 'var(--accent-danger)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none'
+              }}
+            >
+              <span style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: hideFlagged ? 'var(--accent-danger)' : 'var(--text-tertiary)'
+              }} />
               <span>Hide Flagged ({flaggedCount})</span>
-            </label>
+            </button>
           </div>
         )}
       </div>
@@ -238,12 +294,37 @@ export default function AdminResults() {
           {page === 1 && !search && top3.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
               {top3.map((item, idx) => {
-                const medalColors = [
-                  { bg: 'rgba(255, 214, 10, 0.1)', border: 'rgba(255, 214, 10, 0.35)', badge: 'Gold • 1st', medal: '🥇' },
-                  { bg: 'rgba(162, 170, 187, 0.1)', border: 'rgba(162, 170, 187, 0.35)', badge: 'Silver • 2nd', medal: '🥈' },
-                  { bg: 'rgba(205, 127, 50, 0.1)', border: 'rgba(205, 127, 50, 0.35)', badge: 'Bronze • 3rd', medal: '🥉' }
+                const tierConfig = [
+                  {
+                    color: '#ffd60a',
+                    bg: 'rgba(255, 214, 10, 0.08)',
+                    border: 'rgba(255, 214, 10, 0.28)',
+                    glow: 'rgba(255, 214, 10, 0.15)',
+                    badge: 'Gold • 1st Place',
+                    place: '1st',
+                    Icon: Trophy
+                  },
+                  {
+                    color: '#c5cad3',
+                    bg: 'rgba(197, 202, 211, 0.08)',
+                    border: 'rgba(197, 202, 211, 0.28)',
+                    glow: 'rgba(197, 202, 211, 0.12)',
+                    badge: 'Silver • 2nd Place',
+                    place: '2nd',
+                    Icon: Award
+                  },
+                  {
+                    color: '#e59b5f',
+                    bg: 'rgba(229, 155, 95, 0.08)',
+                    border: 'rgba(229, 155, 95, 0.28)',
+                    glow: 'rgba(229, 155, 95, 0.12)',
+                    badge: 'Bronze • 3rd Place',
+                    place: '3rd',
+                    Icon: Award
+                  }
                 ];
-                const m = medalColors[idx] || medalColors[0];
+                const t = tierConfig[idx] || tierConfig[0];
+                const TierIcon = t.Icon;
 
                 return (
                   <div
@@ -251,41 +332,68 @@ export default function AdminResults() {
                     className="apple-card is-interactive"
                     onClick={() => handleOpenDetails(item.projectId)}
                     style={{
-                      background: m.bg,
-                      borderColor: m.border,
-                      padding: 22,
+                      background: `linear-gradient(180deg, ${t.bg} 0%, rgba(17, 19, 25, 0.95) 100%)`,
+                      borderColor: t.border,
+                      boxShadow: `0 4px 20px ${t.glow}`,
+                      padding: 24,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
-                      gap: 12
+                      gap: 16,
+                      borderRadius: 'var(--radius-lg)'
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <span style={{ fontSize: 24 }}>{m.medal}</span>
-                        <span className="apple-badge apple-badge-sm" style={{ background: 'rgba(255,255,255,0.08)', fontWeight: 600 }}>
-                          {m.badge}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          background: `${t.color}18`,
+                          border: `1px solid ${t.color}40`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: t.color
+                        }}>
+                          <TierIcon size={22} strokeWidth={2.2} />
+                        </div>
+                        <span style={{
+                          padding: '4px 10px',
+                          borderRadius: 'var(--radius-pill)',
+                          background: `${t.color}20`,
+                          color: t.color,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: '0.02em',
+                          textTransform: 'uppercase'
+                        }}>
+                          {t.badge}
                         </span>
                       </div>
-                      <h4 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                      <h4 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px', letterSpacing: '-0.015em' }}>
                         {item.projectTitle}
                       </h4>
-                      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
-                        Team: {item.teamName} {item.roomNumber && `• Room ${item.roomNumber}`}
+                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                        Team {item.teamName} {item.roomNumber && `· ${item.roomNumber.toLowerCase().startsWith('room') ? item.roomNumber : `Room ${item.roomNumber}`}`}
                       </p>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
                       <div>
-                        <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', display: 'block' }}>Stack Points</span>
-                        <span className="tabular-nums" style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--accent)' }}>
-                          {item.stackPoints} pts
+                        <span style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, letterSpacing: '0.04em', display: 'block' }}>
+                          Stack Rank Points
+                        </span>
+                        <span className="tabular-nums" style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', letterSpacing: '-0.02em' }}>
+                          {item.stackPoints} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-tertiary)' }}>pts</span>
                         </span>
                       </div>
-                      <div>
-                        <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', display: 'block' }}>Total Marks</span>
-                        <span className="tabular-nums" style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {item.totalMarks}
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, letterSpacing: '0.04em', display: 'block' }}>
+                          Total Marks
+                        </span>
+                        <span className="tabular-nums" style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                          {item.totalMarks} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-tertiary)' }}>/ 50</span>
                         </span>
                       </div>
                     </div>
@@ -348,7 +456,7 @@ export default function AdminResults() {
                         <td>
                           {item.roomNumber ? (
                             <span className="apple-badge apple-badge-default apple-badge-sm">
-                              Room {item.roomNumber}
+                              {item.roomNumber.toLowerCase().startsWith('room') ? item.roomNumber : `Room ${item.roomNumber}`}
                             </span>
                           ) : (
                             <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>—</span>
@@ -360,13 +468,13 @@ export default function AdminResults() {
                           </span>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <span className="tabular-nums" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                             {item.totalMarks}
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span className="tabular-nums apple-badge apple-badge-default apple-badge-sm">
-                            {item.timesEvaluated} judges
+                            {item.timesEvaluated} {item.timesEvaluated === 1 ? 'judge' : 'judges'}
                           </span>
                         </td>
                         <td>
@@ -379,14 +487,12 @@ export default function AdminResults() {
                           )}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          <IconButton
+                            icon={Eye}
+                            label="View Score Breakdown"
+                            size="sm"
                             onClick={() => handleOpenDetails(item.projectId)}
-                            title="View Score Breakdown"
-                          >
-                            <Eye size={15} />
-                          </button>
+                          />
                         </td>
                       </tr>
                     ))
@@ -428,8 +534,20 @@ export default function AdminResults() {
               >
                 {track.winner ? (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                      <span style={{ fontSize: 28 }}>🏆</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                      <div style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        background: 'rgba(191, 90, 242, 0.15)',
+                        border: '1px solid rgba(191, 90, 242, 0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--accent-purple)'
+                      }}>
+                        <Trophy size={22} strokeWidth={2.2} />
+                      </div>
                       <div>
                         <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--text-primary)' }}>
                           {track.winner.projectTitle}
