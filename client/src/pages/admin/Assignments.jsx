@@ -718,27 +718,16 @@ export default function AdminAssignments() {
                                 {set.scores?.length || 0}/{set.projects?.length || 0} scored
                               </div>
 
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {(isSetComplete || isSetInProgress) && set.judgeId && (
-                                  <button
-                                    type="button"
-                                    onClick={() => navigate(`/admin/view-judge/${set.judgeId}/score/${set.id}`)}
-                                    className="apple-btn apple-btn-secondary apple-btn-sm"
-                                    style={{ fontSize: 11, height: 26, padding: '0 8px' }}
-                                    title="View live judge scoring screen"
-                                  >
-                                    Live View
-                                  </button>
-                                )}
-
+                              <div>
                                 <button
                                   type="button"
                                   onClick={() => navigate(`/admin/sets/${set.id}`)}
-                                  className="apple-btn apple-btn-ghost apple-btn-sm"
-                                  style={{ fontSize: 11, height: 26, padding: '0 8px' }}
-                                  title="Inspect and edit set scores"
+                                  className="apple-btn apple-btn-secondary apple-btn-sm"
+                                  style={{ fontSize: 12, height: 28, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                  title={isSetComplete ? 'Inspect finalized evaluation and rubric scores' : isSetInProgress ? 'Inspect live judge scoring progress' : 'View set projects and details'}
                                 >
-                                  Set Detail →
+                                  <Eye size={13} />
+                                  <span>{isSetComplete ? 'View Evaluation' : isSetInProgress ? 'Live Inspection' : 'Set Details'}</span>
                                 </button>
                               </div>
                             </div>

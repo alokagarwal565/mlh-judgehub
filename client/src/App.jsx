@@ -27,7 +27,14 @@ import './index.css';
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="login-page"><div className="skeleton" style={{width:200,height:40}}/></div>;
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <span className="apple-btn-spinner" style={{ width: 28, height: 28, borderColor: 'rgba(255,255,255,0.15)', borderTopColor: 'var(--accent)', borderWidth: 3 }} />
+        <span style={{ marginTop: 14, color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Initializing session...</span>
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/login" />;
   return children;
@@ -55,7 +62,7 @@ function AppRoutes() {
               <Route path="progress" element={<AdminProgress />} />
               <Route path="results" element={<AdminResults />} />
               <Route path="integrity" element={<AdminIntegrity />} />
-              <Route path="sets/:setId" element={<AdminSetDetail />} />
+              <Route path="sets/:setId" element={<JudgeScoreSet isAdminView={true} />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="edit-requests" element={<AdminEditRequests />} />
               <Route path="view-judge/:viewAsJudgeId" element={<JudgeDashboard isAdminView={true} />} />

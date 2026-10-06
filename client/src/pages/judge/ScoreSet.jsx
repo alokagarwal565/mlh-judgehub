@@ -10,6 +10,7 @@ import Badge from '../../components/ui/Badge';
 import Button, { IconButton } from '../../components/ui/Button';
 import { Slider, Select } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
+import Skeleton, { SkeletonCard } from '../../components/ui/Skeleton';
 import {
   Clock,
   CheckCircle2,
@@ -23,7 +24,9 @@ import {
   Play,
   Check,
   X,
-  FileText
+  FileText,
+  Eye,
+  User
 } from '../../components/ui/icons';
 
 const CRITERIA = [
@@ -168,9 +171,23 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
 
   if (!set) {
     return (
-      <div style={{ padding: '60px 0', textAlign: 'center' }}>
-        <span className="apple-btn-spinner" style={{ width: 28, height: 28, margin: '0 auto 16px', display: 'block' }} />
-        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Loading evaluation set...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Skeleton width={180} height={16} borderRadius={4} />
+            <Skeleton width={320} height={28} borderRadius={6} />
+          </div>
+          <Skeleton width={110} height={36} borderRadius={20} />
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} width="20%" height={6} borderRadius={4} />
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(360px, 1.4fr)', gap: 24, alignItems: 'start' }}>
+          <SkeletonCard rows={4} />
+          <SkeletonCard rows={6} />
+        </div>
       </div>
     );
   }
@@ -237,7 +254,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   };
 
   const handleNextProject = async () => {
-    await saveCurrentProjectScore();
+    if (!readonly) {
+      await saveCurrentProjectScore();
+    }
     if (currentIdx < projects.length - 1) {
       setCurrentIdx((prev) => prev + 1);
       setTimer(0);
@@ -247,7 +266,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   };
 
   const handlePrevProject = async () => {
-    await saveCurrentProjectScore();
+    if (!readonly) {
+      await saveCurrentProjectScore();
+    }
     if (currentIdx > 0) {
       setCurrentIdx((prev) => prev - 1);
       setTimer(0);
@@ -319,7 +340,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       {/* Top Banner & Stepper Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-tertiary)' }}>
               Set #{set.setNumber} {set.setNumber === 0 ? '• Tie Breaker' : ''}
             </span>
@@ -327,33 +348,58 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
             <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
               {phase === 'scoring' ? `Project ${currentIdx + 1} of ${projects.length}` : 'Final Priority Ranking'}
             </span>
+
+            {readonly && (
+              <Badge variant="info" size="sm" icon={Eye}>
+                Read-Only Inspection
+              </Badge>
+            )}
+
+            {set.judge && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                Evaluator: <strong style={{ color: 'var(--text-secondary)' }}>{set.judge.name}</strong>
+              </span>
+            )}
           </div>
           <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--text-primary)' }}>
             {phase === 'scoring' ? currentProject?.title : 'Stack Rank Top Projects'}
           </h2>
         </div>
 
-        {/* Live Timer Pill */}
-        {!readonly && (
-          <div
-            className="tabular-nums"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              borderRadius: 'var(--radius-pill)',
-              background: timer >= 180 ? 'var(--accent-warning-tint)' : 'var(--bg-surface-elevated)',
-              border: `1px solid ${timer >= 180 ? 'var(--accent-warning)' : 'var(--border-subtle)'}`,
-              color: timer >= 180 ? 'var(--accent-warning)' : 'var(--text-primary)',
-              fontWeight: 600,
-              fontSize: 'var(--font-size-sm)'
-            }}
-          >
-            <Clock size={15} />
-            <span>{formatTimer(timer)}</span>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {readonly && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ArrowLeft}
+              onClick={() => navigate(isAdminView ? '/admin/assignments' : '/judge')}
+            >
+              Back to {isAdminView ? 'Assignments' : 'Dashboard'}
+            </Button>
+          )}
+
+          {/* Live Timer Pill */}
+          {!readonly && (
+            <div
+              className="tabular-nums"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-pill)',
+                background: timer >= 180 ? 'var(--accent-warning-tint)' : 'var(--bg-surface-elevated)',
+                border: `1px solid ${timer >= 180 ? 'var(--accent-warning)' : 'var(--border-subtle)'}`,
+                color: timer >= 180 ? 'var(--accent-warning)' : 'var(--text-primary)',
+                fontWeight: 600,
+                fontSize: 'var(--font-size-sm)'
+              }}
+            >
+              <Clock size={15} />
+              <span>{formatTimer(timer)}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stepper bar across projects */}
@@ -555,7 +601,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                 loading={saving}
                 onClick={handleNextProject}
               >
-                {currentIdx === projects.length - 1 ? 'Go to Stack Ranking' : 'Save & Next'}
+                {currentIdx === projects.length - 1
+                  ? (readonly ? 'View Stack Ranking' : 'Go to Stack Ranking')
+                  : (readonly ? 'Next Project' : 'Save & Next')}
               </Button>
             </div>
           </Card>
@@ -617,7 +665,20 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                 Back to Scoring
               </Button>
 
-              {!readonly && (
+              {readonly ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Badge variant="success" size="md" icon={CheckCircle2}>
+                    Set Evaluation Recorded
+                  </Badge>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={() => navigate(isAdminView ? '/admin/assignments' : '/judge')}
+                  >
+                    Done
+                  </Button>
+                </div>
+              ) : (
                 <Button
                   variant="primary"
                   size="lg"

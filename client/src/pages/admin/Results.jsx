@@ -23,7 +23,8 @@ import {
   AlertTriangle,
   ExternalLink,
   Eye,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Scale
 } from '../../components/ui/icons';
 
 export default function AdminResults() {
@@ -148,6 +149,28 @@ export default function AdminResults() {
     }
   };
 
+  const [rejudging, setRejudging] = useState(false);
+
+  const handleRejudge = async () => {
+    setRejudging(true);
+    try {
+      const res = await api.post(`/events/${eventId}/results/rejudge`);
+      if (!res.data.tiedGroups || res.data.tiedGroups === 0) {
+        success('No tied projects detected on the leaderboard.');
+      } else {
+        success(
+          `${res.data.tiedGroups} tied groups identified · ${res.data.rejudgeAssignments.length} tie-breaker sets allocated to the judging floor!`,
+          'Tie-Breaker Sets Created'
+        );
+      }
+      fetchData();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to trigger tie rejudge');
+    } finally {
+      setRejudging(false);
+    }
+  };
+
   const handleOpenDetails = async (projectId) => {
     setLoadingDetails(true);
     try {
@@ -161,6 +184,7 @@ export default function AdminResults() {
   };
 
   const top3 = displayLeaderboard.slice(0, 3);
+  const tiedCount = leaderboard.filter((e) => e.isTied).length;
 
   return (
     <div>
@@ -168,7 +192,39 @@ export default function AdminResults() {
         title="Leaderboard & Results"
         subtitle="Final rankings, Borda stack rank points, and track winners"
         actions={
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Button
+              variant={tiedCount > 0 && allSetsCompleted ? 'warning' : 'secondary'}
+              size="md"
+              icon={Scale}
+              loading={rejudging}
+              disabled={!allSetsCompleted || tiedCount === 0}
+              onClick={handleRejudge}
+              title={
+                !allSetsCompleted
+                  ? 'All judging sets must be completed before rejudging ties'
+                  : tiedCount === 0
+                  ? 'No tied projects on the leaderboard'
+                  : `Generate tie-breaker evaluation sets for ${tiedCount} tied projects`
+              }
+            >
+              Rejudge Ties
+              {tiedCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    padding: '1px 7px',
+                    borderRadius: 10,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: '#ff9f0a',
+                    color: '#000'
+                  }}
+                >
+                  {tiedCount}
+                </span>
+              )}
+            </Button>
             <Button
               variant="secondary"
               size="md"
@@ -403,6 +459,51 @@ export default function AdminResults() {
             </div>
           )}
 
+          {/* Tie Breaker Notice Banner */}
+          {tiedCount > 0 && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: '14px 18px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(255, 159, 10, 0.08)',
+                border: '1px solid rgba(255, 159, 10, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 16,
+                flexWrap: 'wrap'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Scale size={20} style={{ color: '#ff9f0a' }} />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
+                    Ties Detected on Leaderboard ({tiedCount} projects)
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Multiple projects share identical Borda points and total scores.{' '}
+                    {allSetsCompleted
+                      ? 'Click "Rejudge Ties" to auto-allocate impartial evaluators for targeted tie-breaker rounds.'
+                      : 'All active judging rounds must finish before tie-breaker evaluation can begin.'}
+                  </div>
+                </div>
+              </div>
+
+              {allSetsCompleted && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={rejudging}
+                  onClick={handleRejudge}
+                  style={{ background: '#ff9f0a', color: '#000', fontWeight: 700, border: 'none' }}
+                >
+                  ⚡ Launch Rejudge Ties
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Full Rankings Data Table */}
           <div className="apple-table-container">
             <div className="apple-table-scroll">
@@ -480,6 +581,8 @@ export default function AdminResults() {
                         <td>
                           {item.projectStatus === 'FLAGGED' ? (
                             <Badge variant="danger" dot>Flagged</Badge>
+                          ) : item.isTied ? (
+                            <Badge variant="warning" dot pulse>Tied</Badge>
                           ) : trackWinnerIds.has(item.projectId) ? (
                             <Badge variant="purple" icon={Award}>Winner</Badge>
                           ) : (
