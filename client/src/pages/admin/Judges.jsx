@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import { SearchField, Input } from '../../components/ui/Input';
+import { SearchField, Input, Select } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
 import {
@@ -172,18 +172,19 @@ export default function AdminJudges() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Activity State:</span>
-          <select
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter:</span>
+          <Select
             value={activityFilter}
             onChange={(e) => setActivityFilter(e.target.value)}
-            className="apple-select"
-            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
-          >
-            <option value="ALL">All Judges ({judges.length})</option>
-            <option value="ACTIVE">Currently Judging</option>
-            <option value="DONE">Completed</option>
-            <option value="IDLE">Not Started</option>
-          </select>
+            size="sm"
+            width={180}
+            options={[
+              { value: 'ALL', label: `All Judges (${judges.length})` },
+              { value: 'ACTIVE', label: 'Currently Judging' },
+              { value: 'DONE', label: 'Completed' },
+              { value: 'IDLE', label: 'Not Started' }
+            ]}
+          />
         </div>
       </div>
 

@@ -1478,3 +1478,37 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Apple Custom Dropdown Select */
+@keyframes appleSelectFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.apple-custom-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: var(--border-strong) !important;
+}
+
+.apple-custom-select-menu::-webkit-scrollbar {
+  width: 5px;
+}
+
+.apple-custom-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.apple-custom-select-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.apple-custom-select-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

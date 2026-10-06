@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from './ui/icons';
+import { Select } from './ui/Select';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -48,29 +49,18 @@ export default function Pagination({ page, totalPages, total, perPage, onPageCha
         </span>
 
         {onPerPageChange && (
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <select
-              value={perPage}
-              onChange={(e) => {
-                onPerPageChange(Number(e.target.value));
-                onPageChange(1);
-              }}
-              className="apple-select"
-              style={{
-                fontSize: 'var(--font-size-xs)',
-                padding: '4px 24px 4px 10px',
-                minHeight: 28,
-                borderRadius: 'var(--radius-xs)',
-                background: 'var(--bg-surface-overlay)'
-              }}
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n} / page
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            value={perPage}
+            size="sm"
+            placement="top"
+            width={106}
+            options={PAGE_SIZES.map((n) => ({ value: n, label: `${n} / page` }))}
+            onChange={(e) => {
+              const val = Number(e.target ? e.target.value : e);
+              onPerPageChange(val);
+              onPageChange(1);
+            }}
+          />
         )}
       </div>
 

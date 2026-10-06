@@ -579,7 +579,7 @@ export default function AdminResults() {
         isOpen={!!selectedDetails}
         onClose={() => setSelectedDetails(null)}
         title={selectedDetails?.title || 'Project Breakdown'}
-        subtitle={`Team ${selectedDetails?.team?.name || 'Unknown'} ${selectedDetails?.roomNumber ? `· ${selectedDetails.roomNumber.toLowerCase().startsWith('room') ? selectedDetails.roomNumber : `Room ${selectedDetails.roomNumber}`}` : ''}`}
+        subtitle={`Team ${selectedDetails?.team?.name || 'Unknown'} ${selectedDetails?.roomNumber ? `· ${selectedDetails.roomNumber.toLowerCase().startsWith('room') ? selectedDetails.roomNumber : `Room ${selectedDetails.roomNumber}`}` : ''} ${selectedDetails?.teamNumber ? `· #${selectedDetails.teamNumber}` : ''}`}
         maxWidth="640px"
         footer={
           <Button variant="secondary" onClick={() => setSelectedDetails(null)}>
@@ -608,7 +608,7 @@ export default function AdminResults() {
             )}
 
             {selectedDetails.description && (
-              <div style={{ marginBottom: 18 }}>
+              <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
                   Project Description
                 </div>
@@ -618,33 +618,121 @@ export default function AdminResults() {
               </div>
             )}
 
-            {/* Links */}
-            {(selectedDetails.demoLink || selectedDetails.videoUrl) && (
-              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-                {selectedDetails.demoLink && (
-                  <a
-                    href={selectedDetails.demoLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="apple-btn apple-btn-secondary apple-btn-sm"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <ExternalLink size={14} /> Demo Link
-                  </a>
-                )}
-                {selectedDetails.videoUrl && (
-                  <a
-                    href={selectedDetails.videoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="apple-btn apple-btn-secondary apple-btn-sm"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <ExternalLink size={14} /> Video URL
-                  </a>
-                )}
+            {/* Links & Team Contact Strip */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 20 }}>
+              {selectedDetails.demoLink && (
+                <a
+                  href={selectedDetails.demoLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="apple-btn apple-btn-secondary apple-btn-sm"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <ExternalLink size={14} /> Demo Link
+                </a>
+              )}
+              {selectedDetails.videoUrl && (
+                <a
+                  href={selectedDetails.videoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="apple-btn apple-btn-secondary apple-btn-sm"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <ExternalLink size={14} /> Video URL
+                </a>
+              )}
+              {selectedDetails.leaderName && (
+                <span className="apple-badge apple-badge-default apple-badge-sm">
+                  Leader: {selectedDetails.leaderName}
+                </span>
+              )}
+              {selectedDetails.team?.phone && (
+                <span className="apple-badge apple-badge-default apple-badge-sm">
+                  Phone: {selectedDetails.team.phone}
+                </span>
+              )}
+            </div>
+
+            {/* Assigned Judging Sets */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
+                Assigned Judging Sets ({selectedDetails.judgeSetProjects?.length || 0})
               </div>
-            )}
+              {(!selectedDetails.judgeSetProjects || selectedDetails.judgeSetProjects.length === 0) ? (
+                <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>No judge sets assigned yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {selectedDetails.judgeSetProjects.map((jsp) => {
+                    const set = jsp.set;
+                    if (!set) return null;
+                    const isComplete = set.status === 'COMPLETED';
+                    const isInProgress = set.status === 'IN_PROGRESS';
+                    const judgeName = set.judge?.name;
+                    const nomination = set.nominations?.[0];
+                    const rankVote = set.stackRankVotes?.[0];
+
+                    return (
+                      <div
+                        key={jsp.setId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          background: 'var(--bg-surface-elevated)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: 12
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {set.setNumber === 0 ? '🏆 Tie-breaker' : `Set #${set.setNumber}`}
+                          </span>
+                          {set.column && (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
+                              Col {set.column}
+                            </span>
+                          )}
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            {judgeName ? `· ${judgeName}` : '· Awaiting Judge'}
+                          </span>
+                          {nomination?.track && (
+                            <span
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: 'var(--radius-pill)',
+                                background: `${nomination.track.color}18`,
+                                border: `1px solid ${nomination.track.color}35`,
+                                color: nomination.track.color,
+                                fontSize: 10,
+                                fontWeight: 700
+                              }}
+                            >
+                              🏷️ {nomination.track.name}
+                            </span>
+                          )}
+                          {rankVote && (
+                            <span style={{ color: 'var(--accent)', fontSize: 11, fontWeight: 700 }}>
+                              {rankVote.rank === 1 ? '🥇 1st' : rankVote.rank === 2 ? '🥈 2nd' : '🥉 3rd'} ({rankVote.points} pts)
+                            </span>
+                          )}
+                        </div>
+
+                        <Badge
+                          variant={isComplete ? 'success' : isInProgress ? 'warning' : 'default'}
+                          size="sm"
+                          dot={isInProgress}
+                        >
+                          {isComplete ? 'Scored' : isInProgress ? 'Evaluating' : 'Pending'}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {/* Evaluations breakdown */}
             <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>

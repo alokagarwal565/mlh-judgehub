@@ -8,7 +8,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button, { IconButton } from '../../components/ui/Button';
-import { Slider } from '../../components/ui/Input';
+import { Slider, Select } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import {
   Clock,
@@ -585,23 +585,23 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                     {label}
                   </div>
 
-                  <select
+                  <Select
                     value={selectedId || ''}
-                    onChange={(e) => setRankingSlot(rIdx, e.target.value || null)}
+                    onChange={(e) => setRankingSlot(rIdx, (e.target ? e.target.value : e) || null)}
                     disabled={readonly}
-                    className="apple-select"
-                  >
-                    <option value="">-- Choose Project --</option>
-                    {projects.map((p) => {
-                      const s = getScore(p.id);
-                      const total = s.completion + s.originality + s.learning + s.design + s.technology;
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {p.title} ({total}/50 marks)
-                        </option>
-                      );
-                    })}
-                  </select>
+                    placeholder="-- Choose Project --"
+                    options={[
+                      { value: '', label: '-- Choose Project --' },
+                      ...projects.map((p) => {
+                        const s = getScore(p.id);
+                        const total = s.completion + s.originality + s.learning + s.design + s.technology;
+                        return {
+                          value: p.id,
+                          label: `${p.title} (${total}/50 marks)`
+                        };
+                      })
+                    ]}
+                  />
                 </div>
               );
             })}

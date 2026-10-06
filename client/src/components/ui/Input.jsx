@@ -36,42 +36,7 @@ export function Input({
   );
 }
 
-export function Select({
-  label,
-  error,
-  helpText,
-  options = [],
-  className = '',
-  id,
-  children,
-  ...props
-}) {
-  const selectId = id || (label ? `select-${label.toLowerCase().replace(/\s+/g, '-')}` : undefined);
-
-  return (
-    <div className={`apple-form-group ${error ? 'has-error' : ''} ${className}`}>
-      {label && (
-        <label htmlFor={selectId} className="apple-form-label">
-          {label}
-        </label>
-      )}
-      <div className="apple-select-wrapper">
-        <select id={selectId} className="apple-select" aria-invalid={!!error} {...props}>
-          {options.length > 0
-            ? options.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))
-            : children}
-        </select>
-        <span className="apple-select-chevron" aria-hidden="true">▾</span>
-      </div>
-      {error && <span className="apple-form-error">{error}</span>}
-      {helpText && !error && <span className="apple-form-help">{helpText}</span>}
-    </div>
-  );
-}
+export { Select } from './Select';
 
 export function SearchField({
   value,

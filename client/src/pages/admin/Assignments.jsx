@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import { SearchField } from '../../components/ui/Input';
+import { SearchField, Select } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
 import {
@@ -144,18 +144,19 @@ export default function AdminAssignments() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter Status:</span>
-          <select
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter:</span>
+          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="apple-select"
-            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
-          >
-            <option value="ALL">All Sets ({sets.length})</option>
-            <option value="UNASSIGNED">Unassigned</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="COMPLETED">Completed</option>
-          </select>
+            size="sm"
+            width={170}
+            options={[
+              { value: 'ALL', label: `All Sets (${sets.length})` },
+              { value: 'UNASSIGNED', label: 'Unassigned' },
+              { value: 'IN_PROGRESS', label: 'In Progress' },
+              { value: 'COMPLETED', label: 'Completed' }
+            ]}
+          />
         </div>
       </div>
 
@@ -281,21 +282,19 @@ export default function AdminAssignments() {
         }
       >
         <div style={{ marginBottom: 14 }}>
-          <label className="apple-form-label" style={{ display: 'block', marginBottom: 6 }}>
-            Available Evaluators ({idleJudges.length})
-          </label>
-          <select
+          <Select
+            label={`Available Evaluators (${idleJudges.length})`}
             value={selectedJudgeId}
             onChange={(e) => setSelectedJudgeId(e.target.value)}
-            className="apple-select"
-          >
-            <option value="">-- Choose Judge --</option>
-            {idleJudges.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.name} ({j.completedSets || 0} completed sets)
-              </option>
-            ))}
-          </select>
+            placeholder="-- Choose Judge --"
+            options={[
+              { value: '', label: '-- Choose Judge --' },
+              ...idleJudges.map((j) => ({
+                value: j.id,
+                label: `${j.name} (${j.completedSets || 0} completed sets)`
+              }))
+            ]}
+          />
         </div>
       </Modal>
     </div>

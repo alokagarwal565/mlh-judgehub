@@ -233,19 +233,20 @@ export default function AdminProjects() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter Status:</span>
-          <select
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter:</span>
+          <Select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="apple-select"
-            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
-          >
-            <option value="ALL">All Statuses ({projects.length})</option>
-            <option value="SUBMITTED">Submitted</option>
-            <option value="UNDER_REVIEW">In Judging</option>
-            <option value="SCORED">Scored</option>
-            <option value="FLAGGED">Flagged</option>
-          </select>
+            size="sm"
+            width={180}
+            options={[
+              { value: 'ALL', label: `All Statuses (${projects.length})` },
+              { value: 'SUBMITTED', label: 'Submitted' },
+              { value: 'UNDER_REVIEW', label: 'In Judging' },
+              { value: 'SCORED', label: 'Scored' },
+              { value: 'FLAGGED', label: 'Flagged', color: '#ff453a' }
+            ]}
+          />
         </div>
       </div>
 
