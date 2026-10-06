@@ -4,14 +4,16 @@ import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useLoader } from '../../context/LoaderContext';
 import { useAuth } from '../../context/AuthContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 
 export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const readonly = isAdminView || isReadOnly;
   const { setId, viewAsJudgeId } = useParams();
   const navigate = useNavigate();
   const { error: toastError } = useToast();
-    const { showLoader, hideLoader } = useLoader();
+  const { showLoader, hideLoader } = useLoader();
   const { user } = useAuth();
+  const { activeEvent } = useActiveEvent();
   const [set, setSet] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -32,81 +34,110 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const [deleteFlagId, setDeleteFlagId] = useState(null);
 
   useEffect(() => {
-    showLoader('Loading scoring set...');
-    api.get(`/events`).then(r => {
-      const ev = r.data.find(e => e.status === 'JUDGING') || r.data[0];
-      if (ev) {
-        api.get(`/events/${ev.id}/sets/${setId}`).then(r => {
-          setSet(r.data);
-          // Pre-populate existing scores
-          const existingScores = {};
-          const existingFeedback = {};
-          const existingNoms = {};
-          for (const s of r.data.scores || []) {
-            existingScores[s.projectId] = {
-              completion: s.completion, originality: s.originality,
-              learning: s.learning, design: s.design, technology: s.technology
-            };
-          }
-          setScores(existingScores);
+    let isMounted = true;
 
-          // Pre-populate feedback
-          for (const f of r.data.feedback || []) {
-            existingFeedback[f.projectId] = f.comment;
-          }
-          setFeedback(existingFeedback);
+    const loadSetData = async () => {
+      showLoader('Loading scoring set...');
+      try {
+        let ev = activeEvent;
+        if (!ev) {
+          const eventsRes = await api.get('/events');
+          ev = eventsRes.data.find(e => e.isActive) || eventsRes.data.find(e => e.status === 'JUDGING') || eventsRes.data[0];
+        }
 
-          // Pre-populate nominations
-          for (const n of r.data.nominations || []) {
-            if (!existingNoms[n.projectId]) existingNoms[n.projectId] = [];
-            existingNoms[n.projectId].push(n.trackId);
-          }
-          setNominations(existingNoms);
+        if (!ev) {
+          if (isMounted) toastError('No active hackathon event found.');
+          return;
+        }
 
-          // Pre-populate rankings
-          const numProjects = r.data.projects.length;
-          const isTieBreaker = r.data.setNumber === 0;
-          const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
-          const initialRankings = Array(reqRanks).fill(null);
-          
-          if (r.data.stackRankVotes?.length > 0) {
-            const sortedVotes = [...r.data.stackRankVotes].sort((a, b) => a.rank - b.rank);
-            sortedVotes.slice(0, reqRanks).forEach((v, i) => {
-              initialRankings[i] = v.projectId;
-            });
-          }
-          setRankings(initialRankings);
+        const setRes = await api.get(`/events/${ev.id}/sets/${setId}`);
+        if (!isMounted) return;
 
-          // Detect edit mode: if all projects already have scores, this is a reopened set
-          const allScored = r.data.projects.every(sp => 
-            r.data.scores?.some(s => s.projectId === sp.project.id)
-          );
-          if (allScored && r.data.scores?.length > 0) {
-            setIsEditing(true);
-          }
-        });
+        const setData = setRes.data;
+        setSet(setData);
 
-        // Fetch flags for this event
-        api.get(`/events/${ev.id}/flags`).then(r => {
+        // Pre-populate existing scores
+        const existingScores = {};
+        const existingFeedback = {};
+        const existingNoms = {};
+        for (const s of setData.scores || []) {
+          existingScores[s.projectId] = {
+            completion: s.completion, originality: s.originality,
+            learning: s.learning, design: s.design, technology: s.technology
+          };
+        }
+        setScores(existingScores);
+
+        // Pre-populate feedback
+        for (const f of setData.feedback || []) {
+          existingFeedback[f.projectId] = f.comment;
+        }
+        setFeedback(existingFeedback);
+
+        // Pre-populate nominations
+        for (const n of setData.nominations || []) {
+          if (!existingNoms[n.projectId]) existingNoms[n.projectId] = [];
+          existingNoms[n.projectId].push(n.trackId);
+        }
+        setNominations(existingNoms);
+
+        // Pre-populate rankings
+        const numProjects = setData.projects.length;
+        const isTieBreaker = setData.setNumber === 0;
+        const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
+        const initialRankings = Array(reqRanks).fill(null);
+        
+        if (setData.stackRankVotes?.length > 0) {
+          const sortedVotes = [...setData.stackRankVotes].sort((a, b) => a.rank - b.rank);
+          sortedVotes.slice(0, reqRanks).forEach((v, i) => {
+            initialRankings[i] = v.projectId;
+          });
+        }
+        setRankings(initialRankings);
+
+        // Detect edit mode: if all projects already have scores, this is a reopened set
+        const allScored = setData.projects.every(sp => 
+          setData.scores?.some(s => s.projectId === sp.project.id)
+        );
+        if (allScored && setData.scores?.length > 0) {
+          setIsEditing(true);
+        }
+
+        // Fetch flags and tracks in parallel
+        const [flagsRes, tracksRes] = await Promise.allSettled([
+          api.get(`/events/${ev.id}/flags`),
+          api.get(`/events/${ev.id}/tracks`)
+        ]);
+
+        if (isMounted && flagsRes.status === 'fulfilled') {
           const flagsByProject = {};
-          for (const flag of r.data) {
+          for (const flag of flagsRes.value.data) {
             if (!flagsByProject[flag.projectId]) {
               flagsByProject[flag.projectId] = [];
             }
             flagsByProject[flag.projectId].push(flag);
           }
           setProjectFlags(flagsByProject);
-        }).catch(() => {
-          // If flags endpoint fails, just continue
-        });
+        }
 
-        api.get(`/events/${ev.id}/tracks`).then(r => setTracks(r.data));
-        hideLoader();
-      } else {
-        hideLoader();
+        if (isMounted && tracksRes.status === 'fulfilled') {
+          setTracks(tracksRes.value.data);
+        }
+      } catch (err) {
+        console.error('Failed to load score set', err);
+        if (isMounted) {
+          toastError(err.response?.data?.error || 'Failed to load scoring set');
+        }
+      } finally {
+        if (isMounted) {
+          hideLoader();
+        }
       }
-    }).catch(() => hideLoader());
-  }, [setId]);
+    };
+
+    loadSetData();
+    return () => { isMounted = false; };
+  }, [setId, activeEvent]);
 
   // Timer
   useEffect(() => {

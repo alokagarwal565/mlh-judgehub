@@ -17,7 +17,6 @@ export default function AdminUsers() {
   const [pwForm, setPwForm] = useState({ password: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [revealed, setRevealed] = useState({});
   const { showLoader, hideLoader } = useLoader();
 
   const load = useCallback(async () => {
@@ -131,7 +130,7 @@ export default function AdminUsers() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
-                <th>Password</th>
+                <th>Security</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -147,24 +146,9 @@ export default function AdminUsers() {
                   <td className="text-muted">{u.email}</td>
                   <td className="text-muted" style={{ fontSize: 12 }}>{u.phone || '—'}</td>
                   <td>
-                    {u.role === 'JUDGE' ? (
-                      <span style={{ color: 'var(--text-muted)', fontSize: 11, fontStyle: 'italic' }}>Protected</span>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, letterSpacing: revealed[u.id] ? 0 : 2 }}>
-                          {u.passwordPlain
-                            ? (revealed[u.id] ? u.passwordPlain : '••••••••')
-                            : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>not stored</span>}
-                        </span>
-                        {u.passwordPlain && (
-                          <button onClick={() => toggleReveal(u.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--text-muted)', padding: 0 }}
-                            title={revealed[u.id] ? 'Hide' : 'Show'}>
-                            {revealed[u.id] ? '🙈' : '👁'}
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      🔒 Encrypted
+                    </span>
                   </td>
                   <td>
                     <div className="flex gap-2">

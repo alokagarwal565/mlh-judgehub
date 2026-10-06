@@ -8,7 +8,7 @@ const router = Router();
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
@@ -17,8 +17,9 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'Email already registered' });
     }
     const passwordHash = await bcrypt.hash(password, 10);
+    // ponytail: Public registration is strictly limited to TEAM role. ADMIN/JUDGE must be provisioned by admin.
     const user = await prisma.user.create({
-      data: { name, email, passwordHash, role: role || 'TEAM' }
+      data: { name, email, passwordHash, role: 'TEAM' }
     });
     const token = signToken({ userId: user.id, email: user.email, role: user.role, name: user.name });
     res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
@@ -112,7 +113,7 @@ router.put('/change-password', authenticate, async (req, res) => {
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash, passwordPlain: newPassword } });
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

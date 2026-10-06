@@ -7,7 +7,7 @@ import { runIntegrityChecks } from '../engine/integrity.js';
 const router = Router();
 
 // GET /api/events/:eventId/flags
-router.get('/:eventId/flags', authenticate, requireActiveEvent, async (req, res) => {
+router.get('/:eventId/flags', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
     const flags = await prisma.flag.findMany({
       where: { eventId: req.params.eventId },
@@ -24,42 +24,47 @@ router.get('/:eventId/flags', authenticate, requireActiveEvent, async (req, res)
 });
 
 // POST /api/events/:eventId/flags — Create or update flag (upsert)
-router.post('/:eventId/flags', authenticate, requireActiveEvent, async (req, res) => {
+router.post('/:eventId/flags', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
     const { projectId, reason } = req.body;
-    const flag = await prisma.flag.upsert({
-      where: {
-        projectId_flaggedBy: {
-          projectId,
-          flaggedBy: req.user!.userId
-        }
-      },
-      update: {
-        reason,
-        status: 'OPEN' // Reset to OPEN if updating existing flag
-      },
-      create: {
-        eventId: req.params.eventId,
-        projectId,
-        flaggedBy: req.user!.userId,
-        reason
-      }
-    });
+    if (!projectId || !reason) return res.status(400).json({ error: 'projectId and reason are required' });
 
-    // Mark the project as flagged
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { status: 'FLAGGED' }
-    });
+    // ponytail: Execute flag upsert and project status update in a transaction
+    const [flag] = await prisma.$transaction([
+      prisma.flag.upsert({
+        where: {
+          projectId_flaggedBy: {
+            projectId,
+            flaggedBy: req.user!.userId
+          }
+        },
+        update: {
+          reason,
+          status: 'OPEN' // Reset to OPEN if updating existing flag
+        },
+        create: {
+          eventId: req.params.eventId,
+          projectId,
+          flaggedBy: req.user!.userId,
+          reason
+        }
+      }),
+      prisma.project.update({
+        where: { id: projectId },
+        data: { status: 'FLAGGED' }
+      })
+    ]);
 
     const io = req.app.get('io');
-    io.emit('flag:created', {
-      eventId: req.params.eventId,
-      flagId: flag.id,
-      projectId,
-      reason,
-      flaggedBy: req.user!.name
-    });
+    if (io) {
+      io.to(`event:${req.params.eventId}`).emit('flag:created', {
+        eventId: req.params.eventId,
+        flagId: flag.id,
+        projectId,
+        reason,
+        flaggedBy: req.user!.name
+      });
+    }
 
     res.status(201).json(flag);
   } catch (err: any) {
@@ -97,12 +102,14 @@ router.put('/:eventId/flags/:flagId/edit-reason', authenticate, requireActiveEve
 
     // Emit socket event for real-time updates
     const io = req.app.get('io');
-    io.emit('flag:updated', {
-      eventId: req.params.eventId,
-      flagId: updatedFlag.id,
-      projectId: updatedFlag.projectId,
-      status: updatedFlag.status
-    });
+    if (io) {
+      io.to(`event:${req.params.eventId}`).emit('flag:updated', {
+        eventId: req.params.eventId,
+        flagId: updatedFlag.id,
+        projectId: updatedFlag.projectId,
+        status: updatedFlag.status
+      });
+    }
 
     res.json(updatedFlag);
   } catch (err: any) {
@@ -169,12 +176,14 @@ router.put('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireR
 
     // Emit socket event for real-time updates
     const io = req.app.get('io');
-    io.emit('flag:updated', {
-      eventId: req.params.eventId,
-      flagId: flag.id,
-      projectId: flag.projectId,
-      status
-    });
+    if (io) {
+      io.to(`event:${req.params.eventId}`).emit('flag:updated', {
+        eventId: req.params.eventId,
+        flagId: flag.id,
+        projectId: flag.projectId,
+        status
+      });
+    }
 
     res.json(flag);
   } catch (err: any) {
@@ -183,7 +192,7 @@ router.put('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireR
 });
 
 // GET /api/events/:eventId/projects/:projectId/flags — Get all flags for a project
-router.get('/:eventId/projects/:projectId/flags', authenticate, requireActiveEvent, async (req, res) => {
+router.get('/:eventId/projects/:projectId/flags', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
     const flags = await prisma.flag.findMany({
       where: {
@@ -202,7 +211,7 @@ router.get('/:eventId/projects/:projectId/flags', authenticate, requireActiveEve
 });
 
 // DELETE /api/events/:eventId/flags/:flagId — Delete flag (judge can delete own, admin can delete any)
-router.delete('/:eventId/flags/:flagId', authenticate, requireActiveEvent, async (req, res) => {
+router.delete('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
     const flag = await prisma.flag.findUnique({
       where: { id: req.params.flagId }
@@ -268,11 +277,13 @@ router.delete('/:eventId/flags/:flagId', authenticate, requireActiveEvent, async
 
     // Emit socket event for real-time updates
     const io = req.app.get('io');
-    io.emit('flag:deleted', {
-      eventId: req.params.eventId,
-      flagId: flag.id,
-      projectId: flag.projectId
-    });
+    if (io) {
+      io.to(`event:${req.params.eventId}`).emit('flag:deleted', {
+        eventId: req.params.eventId,
+        flagId: flag.id,
+        projectId: flag.projectId
+      });
+    }
 
     res.json({ success: true });
   } catch (err: any) {

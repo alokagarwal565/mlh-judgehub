@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, invalidateActiveEventCache } from '../middleware/auth.js';
 import { createSampleData } from '../utils/sampleData.js';
 
 const router = Router();
@@ -71,7 +71,9 @@ router.put('/:id', authenticate, requireRole('ADMIN'), async (req, res) => {
 
     if (status) {
       const io = req.app.get('io');
-      io.emit('event:statusChanged', { eventId: event.id, status: event.status });
+      if (io) {
+        io.to(`event:${event.id}`).emit('event:statusChanged', { eventId: event.id, status: event.status });
+      }
     }
 
     res.json(event);
@@ -87,7 +89,9 @@ router.post('/:id/initialize', authenticate, requireRole('ADMIN'), async (req, r
     const result = await initializeEventJudging(req.params.id);
     
     const io = req.app.get('io');
-    io.emit('event:statusChanged', { eventId: req.params.id, status: 'JUDGING' });
+    if (io) {
+      io.to(`event:${req.params.id}`).emit('event:statusChanged', { eventId: req.params.id, status: 'JUDGING' });
+    }
     
     res.json({ message: 'Judging initialized', ...result });
   } catch (err: any) {
@@ -100,16 +104,13 @@ router.post('/:id/activate', authenticate, requireRole('ADMIN'), async (req, res
   try {
     const { id } = req.params;
 
-    // First, deactivate all other events
-    await (prisma.event as any).updateMany({
-      data: { isActive: false }
-    });
+    // ponytail: Execute deactivation and activation in an atomic transaction to eliminate race conditions
+    const [, event] = await prisma.$transaction([
+      prisma.event.updateMany({ data: { isActive: false } }),
+      prisma.event.update({ where: { id }, data: { isActive: true } })
+    ]);
 
-    // Then, activate this one
-    const event = await (prisma.event as any).update({
-      where: { id },
-      data: { isActive: true }
-    });
+    invalidateActiveEventCache();
 
     const io = req.app.get('io');
     io.emit('event:activeChanged', { eventId: event.id });
@@ -129,6 +130,8 @@ router.post('/:id/deactivate', authenticate, requireRole('ADMIN'), async (req, r
       where: { id },
       data: { isActive: false }
     });
+
+    invalidateActiveEventCache();
 
     const io = req.app.get('io');
     io.emit('event:activeChanged', { eventId: null });

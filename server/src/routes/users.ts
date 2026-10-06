@@ -10,12 +10,10 @@ router.get('/users', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       where: { role: { in: ['ADMIN', 'JUDGE'] } },
-      select: { id: true, name: true, email: true, phone: true, role: true, passwordPlain: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true },
       orderBy: [{ role: 'asc' }, { name: 'asc' }]
     });
-    // Mask judge passwords for admins
-    const sanitized = users.map(u => u.role === 'JUDGE' ? { ...u, passwordPlain: null } : u);
-    res.json(sanitized);
+    res.json(users);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -27,8 +25,8 @@ router.post('/users', authenticate, requireRole('ADMIN'), async (req, res) => {
     if (!['ADMIN', 'JUDGE'].includes(role)) return res.status(400).json({ error: 'role must be ADMIN or JUDGE' });
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { name, email, phone: phone || null, role, passwordHash, passwordPlain: password },
-      select: { id: true, name: true, email: true, phone: true, role: true, passwordPlain: true, createdAt: true }
+      data: { name, email, phone: phone || null, role, passwordHash },
+      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true }
     });
     res.status(201).json(user);
   } catch (err: any) {
@@ -44,7 +42,7 @@ router.put('/users/:id', authenticate, requireRole('ADMIN'), async (req, res) =>
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { name, email, phone: phone || null },
-      select: { id: true, name: true, email: true, phone: true, role: true, passwordPlain: true, createdAt: true }
+      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true }
     });
     res.json(user);
   } catch (err: any) {
@@ -66,8 +64,8 @@ router.put('/users/:id/password', authenticate, requireRole('ADMIN'), async (req
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { passwordHash, passwordPlain: password },
-      select: { id: true, name: true, email: true, phone: true, role: true, passwordPlain: true, createdAt: true }
+      data: { passwordHash },
+      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true }
     });
     res.json(user);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -84,8 +82,8 @@ router.post('/users/:id/reset-password', authenticate, requireRole('ADMIN'), asy
     const passwordHash = await bcrypt.hash(defaultPassword, 10);
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { passwordHash, passwordPlain: defaultPassword },
-      select: { id: true, name: true, email: true, phone: true, role: true, passwordPlain: true, createdAt: true }
+      data: { passwordHash },
+      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true }
     });
     res.json(user);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

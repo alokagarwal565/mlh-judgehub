@@ -3,10 +3,12 @@ node_modules/
 
 # Environment variables
 .env
+.env.*
 .env.local
 .env.*.local
 .env.production
 .env.development
+.env.test
 
 # Build outputs
 dist/
@@ -58,3 +60,6 @@ Desktop.ini
 
 # Package manager
 .pnpm-store/
+
+# Documentation & Audit Plans
+docs/

@@ -109,7 +109,9 @@ router.post('/:eventId/assignments/next', authenticate, requireActiveEvent, requ
 
     const io = req.app.get('io');
     const progress = await getAssignmentProgress(req.params.eventId);
-    io.emit('judging:progress', { eventId: req.params.eventId, ...progress });
+    if (io) {
+      io.to(`event:${req.params.eventId}`).emit('judging:progress', { eventId: req.params.eventId, ...progress });
+    }
 
     res.json({ set });
   } catch (err: any) {
@@ -294,7 +296,9 @@ router.post('/:eventId/assignments/manual-assign', authenticate, requireActiveEv
 
     const io = req.app.get('io');
     const progress = await getAssignmentProgress(eventId);
-    io.emit('judging:progress', { eventId, ...progress });
+    if (io) {
+      io.to(`event:${eventId}`).emit('judging:progress', { eventId, ...progress });
+    }
 
     res.json({ message: 'Set assigned successfully' });
   } catch (err: any) {

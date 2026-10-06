@@ -33,7 +33,9 @@ router.post('/request', authenticate, requireRole('JUDGE'), async (req, res) => 
     });
 
     const io = req.app.get('io');
-    io.emit('edit-request:new', request);
+    if (io) {
+      io.to(`event:${set.eventId}`).emit('edit-request:new', request);
+    }
 
     res.json(request);
   } catch (err: any) {
@@ -67,7 +69,7 @@ router.post('/:id/approve', authenticate, requireRole('ADMIN'), async (req, res)
   try {
     const request = await prisma.editRequest.findUnique({
       where: { id: req.params.id },
-      include: { judge: true }
+      include: { judge: true, set: { select: { eventId: true } } }
     });
     if (!request) return res.status(404).json({ error: 'Request not found' });
 
@@ -77,7 +79,9 @@ router.post('/:id/approve', authenticate, requireRole('ADMIN'), async (req, res)
     });
 
     const io = req.app.get('io');
-    io.emit('edit-request:statusChanged', { requestId: request.id, status: 'APPROVED', judgeId: request.judgeId });
+    if (io) {
+      io.to(`event:${request.set.eventId}`).emit('edit-request:statusChanged', { requestId: request.id, status: 'APPROVED', judgeId: request.judgeId });
+    }
 
     res.json({ message: 'Request approved' });
   } catch (err: any) {
@@ -88,7 +92,10 @@ router.post('/:id/approve', authenticate, requireRole('ADMIN'), async (req, res)
 // POST /api/edit-requests/:id/deny — Admin denies a request
 router.post('/:id/deny', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
-    const request = await prisma.editRequest.findUnique({ where: { id: req.params.id } });
+    const request = await prisma.editRequest.findUnique({
+      where: { id: req.params.id },
+      include: { set: { select: { eventId: true } } }
+    });
     if (!request) return res.status(404).json({ error: 'Request not found' });
 
     await prisma.editRequest.update({
@@ -97,7 +104,9 @@ router.post('/:id/deny', authenticate, requireRole('ADMIN'), async (req, res) =>
     });
 
     const io = req.app.get('io');
-    io.emit('edit-request:statusChanged', { requestId: request.id, status: 'DENIED', judgeId: request.judgeId });
+    if (io) {
+      io.to(`event:${request.set.eventId}`).emit('edit-request:statusChanged', { requestId: request.id, status: 'DENIED', judgeId: request.judgeId });
+    }
 
     res.json({ message: 'Request denied' });
   } catch (err: any) {

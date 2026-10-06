@@ -27,7 +27,7 @@ export async function createSampleData(options: { wipeExisting?: boolean } = {})
     // Create Default Admin
     const adminHash = await bcrypt.hash('admin123', 10);
     await prisma.user.create({
-      data: { name: 'Admin', email: 'admin@mlh.local', passwordHash: adminHash, passwordPlain: 'admin123', role: 'ADMIN' }
+      data: { name: 'Admin', email: 'admin@mlh.local', passwordHash: adminHash, role: 'ADMIN' }
     });
   } else {
     // Check if sample event already exists
@@ -52,7 +52,7 @@ export async function createSampleData(options: { wipeExisting?: boolean } = {})
   for (const j of judgeData) {
     const hash = await bcrypt.hash('judge123', 10);
     const judge = await prisma.user.create({
-      data: { name: j.name, email: j.email, phone: j.phone, passwordHash: hash, passwordPlain: 'judge123', role: 'JUDGE' }
+      data: { name: j.name, email: j.email, phone: j.phone, passwordHash: hash, role: 'JUDGE' }
     });
     judges.push(judge);
   }
@@ -123,7 +123,6 @@ export async function createSampleData(options: { wipeExisting?: boolean } = {})
         name: teamNames[i],
         email: email,
         passwordHash: hash,
-        passwordPlain: 'team123',
         role: 'TEAM',
         phone: `+1-555-${String(1000 + i + 1).padStart(4, '0')}`
       }

@@ -64,6 +64,12 @@ export function generateSetColumns(
   setSize: number = 5
 ): string[][][] {
   const N = projects.length;
+  // ponytail: Guard against empty projects or fewer projects than setSize to prevent division by zero / NaN
+  if (N === 0) return [];
+  if (N < setSize) {
+    return [[[ ...projects.map(p => p.id) ]]];
+  }
+
   // Starting Offsets for setSize=5: 1, 3, 4 (Indices 0, 2, 3)
   const offsets = [1, 3, 4];
   const columns: string[][][] = [];
@@ -271,24 +277,31 @@ export async function assignNextSetToJudge(
     return a.set.setNumber - b.set.setNumber;
   });
 
-  const bestSet = scoredSets[0].set;
-  console.log(`[SmartAssign] Selected set ${bestSet.id} (Score: ${scoredSets[0].score}) for judge ${judgeId}`);
+  // ponytail: Atomic claim loop prevents race conditions when concurrent judges request next set simultaneously
+  for (const candidate of scoredSets) {
+    const claimResult = await prisma.judgeSet.updateMany({
+      where: {
+        id: candidate.set.id,
+        status: 'UNASSIGNED'
+      },
+      data: {
+        judgeId,
+        status: 'IN_PROGRESS'
+      }
+    });
 
-  // Assign this set to the judge
-  await prisma.judgeSet.update({
-    where: { id: bestSet.id },
-    data: {
-      judgeId,
-      status: 'IN_PROGRESS'
+    if (claimResult.count > 0) {
+      console.log(`[SmartAssign] Successfully claimed set ${candidate.set.id} for judge ${judgeId}`);
+      // Update project statuses: SUBMITTED → IN_JUDGING
+      for (const sp of candidate.set.projects) {
+        await updateProjectJudgingStatus(sp.projectId);
+      }
+      return candidate.set.id;
     }
-  });
-
-  // Update project statuses: SUBMITTED → IN_JUDGING
-  for (const sp of bestSet.projects) {
-    await updateProjectJudgingStatus(sp.projectId);
   }
 
-  return bestSet.id;
+  console.log(`[SmartAssign] All candidate sets were claimed by concurrent requests for judge ${judgeId}`);
+  return null;
 }
 
 /**

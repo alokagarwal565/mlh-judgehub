@@ -31,7 +31,7 @@ router.get('/:eventId/projects', authenticate, requireActiveEvent, async (req, r
 });
 
 // POST /api/events/:eventId/projects
-router.post('/:eventId/projects', authenticate, requireActiveEvent, async (req, res) => {
+router.post('/:eventId/projects', authenticate, requireActiveEvent, requireRole('ADMIN', 'TEAM'), async (req, res) => {
   try {
     const { title, description, demoLink, videoUrl, teamName, teamNumber, roomNumber, leaderName, phone, email, password } = req.body;
 
@@ -209,7 +209,9 @@ router.post('/:eventId/projects/import', authenticate, requireRole('ADMIN'), asy
         continue;
       }
 
-      const email = `team-${teamNumber.toLowerCase().replace(/[^a-z0-9]/g, '')}@event.local`;
+      // ponytail: Scope team email by event ID to prevent cross-event collisions and account hijacking
+      const cleanEventId = req.params.eventId.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase();
+      const email = `team-${cleanEventId}-${teamNumber.toLowerCase().replace(/[^a-z0-9]/g, '')}@event.local`;
 
       // Create or update user
       let user = await prisma.user.findUnique({ where: { email } });

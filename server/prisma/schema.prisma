@@ -235,7 +235,6 @@ model User {
   role               Role
   createdAt          DateTime            @default(now()) @map("created_at")
   phone              String?
-  passwordPlain      String?             @map("password_plain")
   auditLogs          AuditLog[]
   editRequests       EditRequest[]
   feedbacks          Feedback[]

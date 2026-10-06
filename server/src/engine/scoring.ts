@@ -207,13 +207,37 @@ export async function findTiedProjects(eventId: string): Promise<string[][]> {
   return Array.from(tiedGroups.values());
 }
 
+// ponytail: Helper to prevent CSV formula injection and correctly escape double quotes
+function escapeCsvField(val: string | number | boolean | null | undefined): string {
+  if (val === null || val === undefined) return '""';
+  let str = String(val);
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
 /**
- * Export leaderboard as CSV string.
+ * Export leaderboard as CSV string with formula injection protection.
  */
 export function leaderboardToCsv(entries: LeaderboardEntry[]): string {
   const header = 'Rank,Team Name,Team No.,Project Title,Room No.,Leader Name,Phone,Email,Stack Points,Total Marks,Times Evaluated,Tied';
   const rows = entries.map(e =>
-    `${e.rank},"${e.teamName}","${e.teamNumber || ''}","${e.projectTitle}","${e.roomNumber || ''}","${e.leaderName || ''}","${e.phone || ''}","${e.email}",${e.stackPoints},${e.totalMarks},${e.timesEvaluated},${e.isTied}`
+    [
+      e.rank,
+      escapeCsvField(e.teamName),
+      escapeCsvField(e.teamNumber || ''),
+      escapeCsvField(e.projectTitle),
+      escapeCsvField(e.roomNumber || ''),
+      escapeCsvField(e.leaderName || ''),
+      escapeCsvField(e.phone || ''),
+      escapeCsvField(e.email),
+      e.stackPoints,
+      e.totalMarks,
+      e.timesEvaluated,
+      e.isTied
+    ].join(',')
   );
   return [header, ...rows].join('\n');
 }
+
