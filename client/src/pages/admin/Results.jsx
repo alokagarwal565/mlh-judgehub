@@ -579,8 +579,8 @@ export default function AdminResults() {
         isOpen={!!selectedDetails}
         onClose={() => setSelectedDetails(null)}
         title={selectedDetails?.title || 'Project Breakdown'}
-        subtitle={`Team: ${selectedDetails?.team?.name || 'Unknown'}`}
-        maxWidth="620px"
+        subtitle={`Team ${selectedDetails?.team?.name || 'Unknown'} ${selectedDetails?.roomNumber ? `· ${selectedDetails.roomNumber.toLowerCase().startsWith('room') ? selectedDetails.roomNumber : `Room ${selectedDetails.roomNumber}`}` : ''}`}
+        maxWidth="640px"
         footer={
           <Button variant="secondary" onClick={() => setSelectedDetails(null)}>
             Close
@@ -589,79 +589,141 @@ export default function AdminResults() {
       >
         {selectedDetails && (
           <div>
+            {selectedDetails.flags && selectedDetails.flags.length > 0 && (
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(255, 69, 58, 0.12)',
+                border: '1px solid rgba(255, 69, 58, 0.3)',
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10
+              }}>
+                <span style={{ color: 'var(--accent-danger)', fontWeight: 700, fontSize: 13 }}>⚠️ FLAGGED</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.4 }}>
+                  {selectedDetails.flags[0].reason}
+                </span>
+              </div>
+            )}
+
             {selectedDetails.description && (
               <div style={{ marginBottom: 18 }}>
-                <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>
-                  Description
+                <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+                  Project Description
                 </div>
-                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', lineHeight: 1.55, margin: 0 }}>
                   {selectedDetails.description}
                 </p>
               </div>
             )}
 
             {/* Links */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-              {selectedDetails.demoLink && (
-                <a
-                  href={selectedDetails.demoLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="apple-btn apple-btn-secondary apple-btn-sm"
-                  style={{ textDecoration: 'none' }}
-                >
-                  <ExternalLink size={14} /> Demo Link
-                </a>
-              )}
-              {selectedDetails.videoUrl && (
-                <a
-                  href={selectedDetails.videoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="apple-btn apple-btn-secondary apple-btn-sm"
-                  style={{ textDecoration: 'none' }}
-                >
-                  <ExternalLink size={14} /> Video URL
-                </a>
-              )}
-            </div>
+            {(selectedDetails.demoLink || selectedDetails.videoUrl) && (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                {selectedDetails.demoLink && (
+                  <a
+                    href={selectedDetails.demoLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="apple-btn apple-btn-secondary apple-btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <ExternalLink size={14} /> Demo Link
+                  </a>
+                )}
+                {selectedDetails.videoUrl && (
+                  <a
+                    href={selectedDetails.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="apple-btn apple-btn-secondary apple-btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <ExternalLink size={14} /> Video URL
+                  </a>
+                )}
+              </div>
+            )}
 
             {/* Evaluations breakdown */}
-            <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 10 }}>
-              Individual Judge Scores ({selectedDetails.scores?.length || 0})
+            <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
+              Judge Evaluations ({selectedDetails.scores?.length || 0})
             </div>
 
-            {selectedDetails.scores?.length === 0 ? (
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>No scores submitted yet.</div>
+            {(!selectedDetails.scores || selectedDetails.scores.length === 0) ? (
+              <div style={{
+                padding: '28px 20px',
+                textAlign: 'center',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px dashed var(--border-subtle)',
+                borderRadius: 'var(--radius-lg)'
+              }}>
+                <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-secondary)', margin: '0 0 4px' }}>
+                  No Evaluations Recorded Yet
+                </p>
+                <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', margin: 0 }}>
+                  When assigned judges evaluate this project, their category score breakdown and comments will appear here.
+                </p>
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {selectedDetails.scores?.map((score, sIdx) => {
-                  const total = score.completion + score.originality + score.learning + score.design + score.technology;
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {selectedDetails.scores.map((score, sIdx) => {
+                  const total = score.total ?? (score.completion + score.originality + score.learning + score.design + score.technology);
+                  const matchingFeedback = selectedDetails.feedbacks?.find((f) => f.judgeId === score.judgeId);
                   return (
                     <div
-                      key={sIdx}
+                      key={score.id || sIdx}
                       style={{
-                        padding: '12px 16px',
+                        padding: '14px 18px',
                         background: 'var(--bg-surface-elevated)',
                         border: '1px solid var(--border-subtle)',
                         borderRadius: 'var(--radius-md)'
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {score.judge?.name || `Judge ${sIdx + 1}`}
-                        </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div>
+                          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {score.judge?.name || `Judge ${sIdx + 1}`}
+                          </span>
+                          {score.set && (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 8 }}>
+                              Set #{score.set.setNumber}
+                            </span>
+                          )}
+                        </div>
                         <span className="tabular-nums" style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--accent)' }}>
                           {total} / 50
                         </span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, fontSize: 'var(--font-size-2xs)', color: 'var(--text-secondary)' }}>
-                        <div>Comp: <strong className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{score.completion}</strong></div>
-                        <div>Orig: <strong className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{score.originality}</strong></div>
-                        <div>Learn: <strong className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{score.learning}</strong></div>
-                        <div>Des: <strong className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{score.design}</strong></div>
-                        <div>Tech: <strong className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{score.technology}</strong></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, fontSize: 'var(--font-size-2xs)', color: 'var(--text-secondary)', marginBottom: matchingFeedback?.comment ? 10 : 0 }}>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, textAlign: 'center' }}>
+                          <span style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10 }}>COMP</span>
+                          <strong className="tabular-nums" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{score.completion}</strong>
+                        </div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, textAlign: 'center' }}>
+                          <span style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10 }}>ORIG</span>
+                          <strong className="tabular-nums" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{score.originality}</strong>
+                        </div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, textAlign: 'center' }}>
+                          <span style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10 }}>LEARN</span>
+                          <strong className="tabular-nums" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{score.learning}</strong>
+                        </div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, textAlign: 'center' }}>
+                          <span style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10 }}>DESIGN</span>
+                          <strong className="tabular-nums" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{score.design}</strong>
+                        </div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, textAlign: 'center' }}>
+                          <span style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10 }}>TECH</span>
+                          <strong className="tabular-nums" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{score.technology}</strong>
+                        </div>
                       </div>
+                      {matchingFeedback?.comment && (
+                        <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-secondary)', borderLeft: '3px solid var(--accent)' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 6 }}>COMMENT:</span>
+                          {matchingFeedback.comment}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

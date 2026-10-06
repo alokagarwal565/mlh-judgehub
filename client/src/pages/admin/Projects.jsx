@@ -182,7 +182,7 @@ export default function AdminProjects() {
 
   const handleShowDetails = async (projectId) => {
     try {
-      const res = await api.get(`/events/${eventId}/projects/${projectId}/details`);
+      const res = await api.get(`/events/${eventId}/projects/${projectId}`);
       setSelectedDetails(res.data);
     } catch (err) {
       toastError('Failed to fetch project details');

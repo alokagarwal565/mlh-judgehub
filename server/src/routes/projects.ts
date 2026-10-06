@@ -30,6 +30,53 @@ router.get('/:eventId/projects', authenticate, requireActiveEvent, async (req, r
   }
 });
 
+// GET /api/events/:eventId/projects/:projectId — Single project with full evaluation, team, and score breakdown
+router.get('/:eventId/projects/:projectId', authenticate, requireActiveEvent, async (req, res) => {
+  try {
+    const project = await prisma.project.findFirst({
+      where: { id: req.params.projectId, eventId: req.params.eventId },
+      include: {
+        team: {
+          select: { id: true, name: true, phone: true, email: true }
+        },
+        scores: {
+          include: {
+            judge: { select: { id: true, name: true } },
+            set: { select: { id: true, column: true, setNumber: true, status: true } }
+          }
+        },
+        feedbacks: {
+          include: {
+            judge: { select: { id: true, name: true } }
+          }
+        },
+        judgeSetProjects: {
+          include: {
+            set: {
+              include: {
+                judge: { select: { id: true, name: true } },
+                stackRankVotes: { where: { projectId: req.params.projectId } },
+                nominations: { where: { projectId: req.params.projectId }, include: { track: true } }
+              }
+            }
+          }
+        },
+        flags: {
+          select: { id: true, reason: true, status: true, adminNotes: true }
+        }
+      }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json(project);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/events/:eventId/projects
 router.post('/:eventId/projects', authenticate, requireActiveEvent, requireRole('ADMIN', 'TEAM'), async (req, res) => {
   try {
