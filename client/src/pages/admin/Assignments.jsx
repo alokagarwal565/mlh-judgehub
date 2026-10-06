@@ -1,499 +1,303 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
-import { useLoader } from '../../context/LoaderContext';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import { SearchField } from '../../components/ui/Input';
+import Modal from '../../components/ui/Modal';
+import EmptyState from '../../components/ui/EmptyState';
+import {
+  Network,
+  Sparkles,
+  Search,
+  CheckCircle2,
+  Clock,
+  Eye,
+  User,
+  Plus
+} from '../../components/ui/icons';
 
 export default function AdminAssignments() {
-  const { error: toastError, success } = useToast();
-  const [events, setEvents] = useState([]);
+  const { success, error: toastError } = useToast();
+  const { activeEvent } = useActiveEvent();
+  const navigate = useNavigate();
+
   const [eventId, setEventId] = useState('');
   const [sets, setSets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  // Manual assign panel
-  const [showAssignPanel, setShowAssignPanel] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [idleJudges, setIdleJudges] = useState([]);
-  const [selectedJudge, setSelectedJudge] = useState(null);
   const [selectedSet, setSelectedSet] = useState(null);
+  const [selectedJudgeId, setSelectedJudgeId] = useState('');
   const [assigning, setAssigning] = useState(false);
-  const navigate = useNavigate();
-  const { activeEvent } = useActiveEvent();
-  const { showLoader, hideLoader } = useLoader();
 
-  const filterSet = (set) => {
-    const q = search.toLowerCase().trim();
-    if (statusFilter !== 'ALL' && set.status !== statusFilter) return false;
-    if (!q) return true;
-    if (set.judge?.name?.toLowerCase().includes(q)) return true;
-    if (getSetRange(set.projects).includes(q)) return true;
-    return set.projects.some(sp => {
-      const name = (sp.project.team?.name || sp.project.title || '').toLowerCase();
-      const num = (sp.project.teamNumber || '').toLowerCase();
-      return name.includes(q) || num.includes(q);
-    });
-  };
-
-  useEffect(() => { 
-    showLoader('Loading events...');
-    api.get('/events').then(r => { 
-      setEvents(r.data); 
-      if (activeEvent) {
-        setEventId(activeEvent.id);
-
-      }
-    }).finally(() => hideLoader()); 
+  useEffect(() => {
+    if (activeEvent) {
+      setEventId(activeEvent.id);
+    } else {
+      api.get('/events').then((r) => {
+        if (r.data.length > 0) setEventId(r.data[0].id);
+      });
+    }
   }, [activeEvent]);
 
-  const currentEvent = events.find(e => e.id === eventId);
-  const isJudging = currentEvent?.status === 'JUDGING';
-  useEffect(() => { if (eventId) loadSets(); }, [eventId]);
-
-  const loadSets = () => { 
-    showLoader('Loading assignments...');
-    api.get(`/events/${eventId}/assignments`)
-      .then(r => setSets(r.data))
-      .finally(() => hideLoader());
-  };
-
-  const loadIdleJudges = () => {
-    if (!eventId) return;
-    api.get(`/events/${eventId}/assignments/idle-judges`).then(r => setIdleJudges(r.data));
-  };
-
-  const handleManualAssign = async () => {
-    if (!selectedJudge || !selectedSet) return;
-    setAssigning(true);
-    try {
-      await api.post(`/events/${eventId}/assignments/manual-assign`, {
-        setId: selectedSet.id,
-        judgeId: selectedJudge.id
-      });
-      success(`Set ${getSetRange(selectedSet.projects)} assigned to ${selectedJudge.name}`);
-      setSelectedJudge(null);
-      setSelectedSet(null);
-      loadSets();
-      loadIdleJudges();
-    } catch (err) {
-      toastError(err.response?.data?.error || 'Assignment failed');
-    } finally {
-      setAssigning(false);
+  const loadSets = () => {
+    if (eventId) {
+      api.get(`/events/${eventId}/assignments`).then((r) => setSets(r.data)).catch(() => {});
     }
   };
 
-  const handleGenerate = async () => {
+  useEffect(() => {
+    loadSets();
+  }, [eventId]);
+
+  const generateSets = async () => {
     setLoading(true);
     try {
-      await api.post(`/events/${eventId}/assignments`);
+      const res = await api.post(`/events/${eventId}/assignments`);
+      success(`Generated ${res.data.totalSets} evaluation sets successfully!`);
       loadSets();
     } catch (err) {
-      toastError(err.response?.data?.error || 'Failed to generate assignments');
+      toastError(err.response?.data?.error || 'Failed to partition sets');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEditSet = async (set) => {
-    // If completed, reopen first
-    if (set.status === 'COMPLETED') {
-      try {
-        await api.post(`/events/${eventId}/sets/${set.id}/reopen`);
-      } catch (err) {
-        toastError(err.response?.data?.error || 'Failed to reopen');
-        return;
-      }
+  const openManualAssign = (s) => {
+    setSelectedSet(s);
+    setSelectedJudgeId('');
+    api.get(`/events/${eventId}/assignments/idle-judges`).then((r) => setIdleJudges(r.data)).catch(() => {});
+    setShowAssignModal(true);
+  };
+
+  const handleManualAssign = async () => {
+    if (!selectedJudgeId || !selectedSet) return;
+    setAssigning(true);
+    try {
+      await api.post(`/events/${eventId}/assignments/manual-assign`, {
+        setId: selectedSet.id,
+        judgeId: selectedJudgeId,
+      });
+      success(`Set #${selectedSet.setNumber} assigned successfully.`);
+      setShowAssignModal(false);
+      loadSets();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to assign judge');
+    } finally {
+      setAssigning(false);
     }
-    navigate(`/admin/sets/${set.id}`);
   };
 
-  const columns = [1, 2, 3];
-
-  const getSetRange = (projects) => {
-    if (!projects || projects.length === 0) return '';
-    const sorted = [...projects].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    const firstMatch = sorted[0]?.project?.teamNumber?.match(/\d+/);
-    if (!firstMatch) return '';
-    const start = parseInt(firstMatch[0]);
-    const end = start + sorted.length - 1;
-    return `${start} - ${end}`;
+  const handleUnassign = async (setId) => {
+    try {
+      await api.post(`/events/${eventId}/assignments/unassign`, { setId });
+      success('Judge unassigned from set');
+      loadSets();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to unassign judge');
+    }
   };
 
-  const fmtTime = (s) => {
-    if (!s) return null;
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${sec}s`;
-  };
+  const filteredSets = sets.filter((s) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      !q ||
+      s.setNumber?.toString().includes(q) ||
+      s.judge?.name?.toLowerCase().includes(q) ||
+      s.projects?.some((sp) => sp.project?.title?.toLowerCase().includes(q));
+
+    const matchStatus = statusFilter === 'ALL' || s.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   return (
     <div>
-      {!activeEvent && (
-        <>
-          <div className="page-header">
-            <h1>Assignments</h1>
-          </div>
-          <div style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            background: 'var(--bg-card)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            marginBottom: '20px'
-          }}>
-            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
-            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to manage assignments.</p>
-          </div>
-        </>
-      )}
+      <PageHeader
+        title="Judging Floor Assignments"
+        subtitle={`Partitioning and evaluator allocation for ${activeEvent?.name || 'event'}`}
+        actions={
+          <Button
+            variant="primary"
+            size="md"
+            icon={Sparkles}
+            loading={loading}
+            onClick={generateSets}
+          >
+            Generate Sets
+          </Button>
+        }
+      />
 
-      {!activeEvent ? null : (
-        <>
-        <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
-          <h1>Assignments</h1>
-          <div className="flex gap-2 items-center">
-            <div style={{display:'flex', alignItems:'center', gap:8}}>
-              {isJudging && (
-                <span style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4}}>
-                  🔒 Judging in progress
-                </span>
-              )}
-              <button
-                className="btn btn-primary"
-                onClick={handleGenerate}
-                disabled={loading || isJudging}
-                title={isJudging ? 'Cannot regenerate sets while judging is in progress' : ''}
-                style={isJudging ? {opacity:0.45, cursor:'not-allowed', filter:'grayscale(0.4)'} : {}}
-              >
-                {loading ? 'Generating...' : '⚡ Generate Sets'}
-              </button>
-            </div>
-            {/* Manual assign button - only while judging */}
-            {isJudging && sets.length > 0 && (
-              <button
-                className={`btn ${showAssignPanel ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => {
-                  setShowAssignPanel(v => !v);
-                  if (!showAssignPanel) loadIdleJudges();
-                }}
-                style={{position:'relative'}}
-              >
-                👥 Manual Assign
-                {idleJudges.filter(j => j.isIdle).length > 0 && (
-                  <span style={{position:'absolute', top:-6, right:-6, background:'var(--danger)', color:'#fff', borderRadius:'50%', width:18, height:18, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700}}>
-                    {idleJudges.filter(j => j.isIdle).length}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
+      {/* Filter and Search Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+        <SearchField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search sets by judge, project, number..."
+        />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="apple-select"
+            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
+          >
+            <option value="ALL">All Sets ({sets.length})</option>
+            <option value="UNASSIGNED">Unassigned</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="COMPLETED">Completed</option>
+          </select>
         </div>
+      </div>
 
-      {/* ── Manual Assign Panel ─────────────────────────────── */}
-      {showAssignPanel && (
-        <div className="card" style={{marginBottom:20, padding:0, overflow:'hidden', border:'1px solid var(--accent)', boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
-          {/* Panel header */}
-          <div style={{padding:'12px 16px', background:'rgba(var(--accent-rgb),0.08)', borderBottom:'1px solid var(--border-light)', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-            <div>
-              <strong style={{fontSize:14}}>👥 Manual Assignment</strong>
-              <span className="text-sm text-muted" style={{marginLeft:8}}>Select a judge → select a set → click Assign</span>
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setShowAssignPanel(false); setSelectedJudge(null); setSelectedSet(null); }}>✕ Close</button>
-          </div>
-
-          <div style={{display:'grid', gridTemplateColumns:'240px 1fr', minHeight:200}}>
-
-            {/* Left: Judge list */}
-            <div style={{borderRight:'1px solid var(--border-light)', padding:12, overflowY:'auto', maxHeight:400}}>
-              <div className="text-sm text-muted" style={{marginBottom:8, fontWeight:600, textTransform:'uppercase', fontSize:11, letterSpacing:'0.05em'}}>Judges</div>
-              {idleJudges.map(j => (
-                <div
-                  key={j.id}
-                  onClick={() => { setSelectedJudge(j); setSelectedSet(null); }}
-                  style={{
-                    padding:'8px 10px', borderRadius:8, marginBottom:6, cursor:'pointer',
-                    background: selectedJudge?.id === j.id ? 'rgba(var(--accent-rgb),0.15)' : 'var(--bg-secondary)',
-                    border: `1px solid ${selectedJudge?.id === j.id ? 'var(--accent)' : 'transparent'}`,
-                    opacity: j.isIdle ? 1 : 0.5,
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <div style={{display:'flex', alignItems:'center', gap:8, position:'relative'}} className="judge-hover-trigger">
-                    <span style={{width:8, height:8, borderRadius:'50%', background: j.isIdle ? 'var(--success)' : 'var(--warning)', flexShrink:0}} />
-                    <span style={{fontSize:13, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{j.name}</span>
-                    <div className="judge-tooltip">
-                      <div style={{fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 4, paddingBottom: 2, fontSize: 10, textTransform: 'uppercase', color: 'var(--accent)'}}>
-                        Judge Info
-                      </div>
-                      <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
-                        <span>📞</span> {j.phone || 'No phone'}
-                      </div>
-                      <div style={{display:'flex', alignItems:'center', gap:6}}>
-                        <span>📍</span> {j.recentLocation ? `Last: ${j.recentLocation}` : 'No history'}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{fontSize:11, color:'var(--text-muted)', marginLeft:16}}>
-                    {j.isIdle ? 'Idle' : 'Busy'} · {j.completedSets} done of {j.totalSets}
-                  </div>
+      {/* Grid of Sets */}
+      {filteredSets.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={Network}
+            title="No Sets Found"
+            description={search ? "No set matches your search filter." : "Click 'Generate Sets' to create partitioned judging assignments."}
+            action={
+              sets.length === 0 && (
+                <Button variant="primary" icon={Sparkles} onClick={generateSets}>
+                  Generate Initial Sets
+                </Button>
+              )
+            }
+          />
+        </Card>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18 }}>
+          {filteredSets.map((s) => (
+            <Card
+              key={s.id}
+              className="is-interactive"
+              title={`Set #${s.setNumber}`}
+              subtitle={`${s.projects?.length || 0} projects assigned`}
+              action={
+                s.status === 'COMPLETED' ? (
+                  <Badge variant="success" icon={CheckCircle2}>Complete</Badge>
+                ) : s.status === 'IN_PROGRESS' ? (
+                  <Badge variant="warning" dot pulse>In Progress</Badge>
+                ) : (
+                  <Badge variant="default">Unassigned</Badge>
+                )
+              }
+            >
+              {/* Judge assignment info */}
+              <div style={{ marginBottom: 14, padding: '10px 12px', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: 2 }}>
+                  Evaluator
                 </div>
-              ))}
-            </div>
+                {s.judge ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>
+                      {s.judge.name}
+                    </span>
+                    {s.status !== 'COMPLETED' && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleUnassign(s.id); }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-danger)', fontSize: 11, cursor: 'pointer' }}
+                      >
+                        Unassign
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>None</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); openManualAssign(s); }}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      + Assign Judge
+                    </button>
+                  </div>
+                )}
+              </div>
 
-            {/* Right: Unassigned sets for selected judge */}
-            <div style={{padding:12, overflowY:'auto', maxHeight:400}}>
-              {!selectedJudge ? (
-                <div style={{height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', fontSize:13}}>← Select a judge</div>
-              ) : (
-                <>
-                  <div className="text-sm text-muted" style={{marginBottom:8, fontWeight:600, textTransform:'uppercase', fontSize:11, letterSpacing:'0.05em'}}>Unassigned Sets</div>
-                  {(() => {
-                    const evalSet = new Set(selectedJudge.evaluatedProjectIds);
-                    const unassigned = sets.filter(s => s.status === 'UNASSIGNED');
-                    if (unassigned.length === 0) return <div style={{color:'var(--text-muted)', fontSize:13}}>No unassigned sets remaining</div>;
-                    return (
-                      <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                        {unassigned.map(set => {
-                          const hasOverlap = set.projects.some(sp => evalSet.has(sp.projectId));
-                          const isSelected = selectedSet?.id === set.id;
-                          return (
-                            <div
-                              key={set.id}
-                              onClick={() => !hasOverlap && setSelectedSet(isSelected ? null : set)}
-                              style={{
-                                padding:'8px 12px', borderRadius:8, cursor: hasOverlap ? 'not-allowed' : 'pointer',
-                                background: isSelected ? 'rgba(var(--accent-rgb),0.15)' : 'var(--bg-secondary)',
-                                border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-light)'}`,
-                                opacity: hasOverlap ? 0.4 : 1,
-                                transition: 'all 0.15s'
-                              }}
-                            >
-                              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-                                <span style={{fontWeight:600, fontSize:13}}>Col {set.column} · {getSetRange(set.projects)}</span>
-                                {hasOverlap && <span style={{fontSize:10, color:'var(--danger)', fontWeight:600}}>⚠ Overlap</span>}
-                              </div>
-                              <div style={{fontSize:11, color:'var(--text-muted)', marginTop:2}}>
-                                {set.projects.map(sp => sp.project?.team?.name || sp.project?.title).join(', ')}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          </div>
+              {/* Projects in set list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                {s.projects?.map((sp, idx) => (
+                  <div
+                    key={sp.projectId}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 'var(--font-size-xs)',
+                      padding: '4px 0'
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '75%' }}>
+                      {idx + 1}. {sp.project?.title}
+                    </span>
+                    <span className="apple-badge apple-badge-default apple-badge-sm">
+                      {sp.project?.roomNumber ? `R.${sp.project.roomNumber}` : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-          {/* Assign action bar */}
-          <div style={{padding:'10px 16px', borderTop:'1px solid var(--border-light)', display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--bg-secondary)'}}>
-            <span style={{fontSize:13, color:'var(--text-muted)'}}>
-              {selectedJudge && selectedSet
-                ? `Assigning Col ${selectedSet.column} · ${getSetRange(selectedSet.projects)} → ${selectedJudge.name}`
-                : 'Select a judge and a set to assign'}
-            </span>
-            <button
-              className="btn btn-success"
-              disabled={!selectedJudge || !selectedSet || assigning}
-              onClick={handleManualAssign}
-            >
-              {assigning ? 'Assigning…' : '✓ Assign'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Search + filter bar */}
-      {sets.length > 0 && (
-        <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:16, flexWrap:'wrap'}}>
-          <div style={{position:'relative', flex:'1', minWidth:200, maxWidth:360}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input
-              className="form-input"
-              style={{paddingLeft:32, width:'100%'}}
-              placeholder="Search judge, team, room, range…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} style={{position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:14}}>✕</button>
-            )}
-          </div>
-          {['ALL','IN_PROGRESS','COMPLETED','UNASSIGNED'].map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{
-                padding:'5px 12px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer', border:'1px solid',
-                background: statusFilter === s ? 'var(--accent)' : 'transparent',
-                color: statusFilter === s ? '#fff' : 'var(--text-secondary)',
-                borderColor: statusFilter === s ? 'var(--accent)' : 'var(--border-light)',
-                transition: 'all 0.15s'
-              }}
-            >
-              {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? '⏳ In Progress' : s === 'COMPLETED' ? '✓ Completed' : '○ Unassigned'}
-            </button>
+              <div style={{ paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={Eye}
+                  onClick={() => navigate(`/admin/sets/${s.id}`)}
+                >
+                  Set Detail
+                </Button>
+              </div>
+            </Card>
           ))}
         </div>
       )}
 
-      {sets.length === 0 ? (
-        <div className="empty-state"><div className="empty-state-icon">🔗</div><h3>No Sets Yet</h3><p>Import teams/judges first, then generate sets</p></div>
-      ) : (
-        <>
-          {/* ── Tie Breaker Section ─────────────────────────── */}
-          {sets.some(s => s.setNumber === 0) && (
-            <div className="card" style={{marginBottom: 24, border: '1px solid var(--warning)', background: 'rgba(var(--warning-rgb), 0.05)'}}>
-              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
-                <h3 style={{fontSize: 16, display:'flex', alignItems:'center', gap:8}}>
-                  🏆 Tie Breaker sets (Set #0)
-                </h3>
-                <span className="badge badge-warning">Action Required</span>
-              </div>
-              <div style={{display:'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12}}>
-                {sets.filter(s => s.setNumber === 0).map(set => (
-                  <div key={set.id} className="card" style={{padding: 12, background: 'var(--bg-secondary)', borderLeft: `4px solid ${set.status === 'COMPLETED' ? 'var(--success)' : set.status === 'IN_PROGRESS' ? 'var(--warning)' : 'var(--danger)'}`}}>
-                    <div className="flex justify-between items-start mb-2">
-                      <div style={{fontWeight: 700, fontSize: 13}}>
-                        Tie Breaker @ Pos {set.baseRank || '?'}
-                      </div>
-                      <span className={`badge ${set.status === 'COMPLETED' ? 'badge-success' : set.status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-danger'}`} style={{fontSize: 9}}>
-                        {set.status === 'UNASSIGNED' ? 'PENDING' : set.status}
-                      </span>
-                    </div>
-                    {set.judge ? (
-                      <div className="text-xs text-muted mb-2">👨‍⚖️ {set.judge.name}</div>
-                    ) : (
-                      <div className="text-xs text-danger mb-2">⚠️ No judge assigned</div>
-                    )}
-                    <div className="text-xs text-muted" style={{lineHeight: 1.4}}>
-                      {set.projects.map(sp => sp.project.team?.name || sp.project.title).join(' · ')}
-                    </div>
-                    {set.status !== 'COMPLETED' && (
-                      <button className="btn btn-ghost btn-sm btn-block mt-2" onClick={() => {
-                        setSelectedSet(set);
-                        loadIdleJudges();
-                        setShowAssignPanel(true);
-                      }}>
-                        Assign Judge
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, alignItems:'start'}}>
-          {columns.map(col => {
-            const colSets = sets.filter(s => s.column === col).sort((a, b) => a.setNumber - b.setNumber);
-            const filteredSets = colSets.filter(filterSet);
-            const completed = filteredSets.filter(s => s.status === 'COMPLETED').length;
-            const inProgress = filteredSets.filter(s => s.status === 'IN_PROGRESS').length;
-            return (
-              <div key={col}>
-                {/* Column header */}
-                <div style={{
-                  background:'var(--bg-secondary)',
-                  border:'1px solid var(--border-light)',
-                  borderRadius:'var(--radius-md)',
-                  padding:'10px 14px',
-                  marginBottom:10,
-                  display:'flex',
-                  alignItems:'center',
-                  justifyContent:'space-between'
-                }}>
-                  <span style={{fontWeight:700, fontSize:14}}>
-                    {col === 1 ? '🟢' : col === 2 ? '🔵' : '🟣'} Set {col}
-                  </span>
-                  <div style={{display:'flex', gap:6, fontSize:12}}>
-                    <span style={{color:'var(--text-muted)'}}>
-                      {search || statusFilter !== 'ALL' ? `${filteredSets.length}/${colSets.length}` : `${colSets.length}`} blocks
-                    </span>
-                    {completed > 0 && <span style={{color:'var(--success)', fontWeight:600}}>✓ {completed}</span>}
-                    {inProgress > 0 && <span style={{color:'var(--warning)', fontWeight:600}}>⏳ {inProgress}</span>}
-                  </div>
-                </div>
-
-                {/* Set cards stacked vertically */}
-                <div style={{display:'flex', flexDirection:'column', gap:10}}>
-                  {filteredSets.length === 0 ? (
-                    <div style={{padding:'20px 14px', textAlign:'center', color:'var(--text-muted)', fontSize:13, background:'var(--bg-secondary)', borderRadius:'var(--radius-md)', border:'1px dashed var(--border-light)'}}>
-                      No matches
-                    </div>
-                  ) : filteredSets.map(set => (
-                    <div key={set.id} className="card" style={{
-                      padding:14,
-                      borderLeft:`3px solid ${set.status === 'COMPLETED' ? 'var(--success)' : set.status === 'IN_PROGRESS' ? 'var(--warning)' : 'var(--border-color)'}`
-                    }}>
-                      <div className="flex items-center justify-between" style={{marginBottom:6}}>
-                        <span style={{fontSize:13, fontWeight:600}}>
-                          {getSetRange(set.projects)}
-                        </span>
-                        <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2}}>
-                          <span className={`badge ${set.status === 'COMPLETED' ? 'badge-success' : set.status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-info'}`}
-                            style={{fontSize:10}}>
-                            {set.status}
-                          </span>
-                          {fmtTime(set.scores?.reduce((s, sc) => s + (sc.timeSpentSeconds || 0), 0)) && (
-                            <span style={{fontSize:10, color:'var(--text-muted)'}}
-                              title="Total judging time for this set">
-                              ⏱ {fmtTime(set.scores.reduce((s, sc) => s + (sc.timeSpentSeconds || 0), 0))}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {set.judge && (
-                        <div 
-                          className="text-sm text-muted judge-hover-trigger" 
-                          style={{
-                            marginBottom: 6, 
-                            cursor: 'help', 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            gap: 4,
-                            position: 'relative'
-                          }}
-                        >
-                          👨‍⚖️ {set.judge.name}
-                          <div className="judge-tooltip">
-                            <div style={{fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 4, paddingBottom: 2, fontSize: 10, textTransform: 'uppercase', color: 'var(--accent)'}}>
-                              Judge Info
-                            </div>
-                            <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
-                              <span>📞</span> {set.judge.phone || 'No phone'}
-                            </div>
-                            <div style={{display:'flex', alignItems:'center', gap:6}}>
-                              <span>📍</span> {set.recentLocation || 'No location'}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      <div style={{fontSize:11, color:'var(--text-muted)', lineHeight:1.6}}>
-                        {set.projects.map(sp => {
-                          const name = sp.project.team?.name || sp.project.title;
-                          const num = sp.project.teamNumber;
-                          return num ? `${name} (${num})` : name;
-                        }).join(' · ')}
-                      </div>
-                      {(set.status === 'COMPLETED' || set.status === 'IN_PROGRESS') && set.judgeId && (
-                        <button className="btn btn-ghost btn-sm mt-2" onClick={() => navigate(`/admin/view-judge/${set.judgeId}/score/${set.id}`)}>
-                          👁 View
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+      {/* Manual Assign Judge Modal */}
+      <Modal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        title={`Assign Judge to Set #${selectedSet?.setNumber}`}
+        subtitle="Select an available evaluator from the idle pool"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowAssignModal(false)}>Cancel</Button>
+            <Button variant="primary" loading={assigning} disabled={!selectedJudgeId} onClick={handleManualAssign}>
+              Confirm Assignment
+            </Button>
+          </>
+        }
+      >
+        <div style={{ marginBottom: 14 }}>
+          <label className="apple-form-label" style={{ display: 'block', marginBottom: 6 }}>
+            Available Evaluators ({idleJudges.length})
+          </label>
+          <select
+            value={selectedJudgeId}
+            onChange={(e) => setSelectedJudgeId(e.target.value)}
+            className="apple-select"
+          >
+            <option value="">-- Choose Judge --</option>
+            {idleJudges.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.name} ({j.completedSets || 0} completed sets)
+              </option>
+            ))}
+          </select>
         </div>
-      </>
-    )}
-      </>
-    )}
-  </div>
-);
+      </Modal>
+    </div>
+  );
 }

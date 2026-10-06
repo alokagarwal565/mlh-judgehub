@@ -1,48 +1,71 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-import { useLoader } from '../../context/LoaderContext';
 import { useAuth } from '../../context/AuthContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import Button, { IconButton } from '../../components/ui/Button';
+import { Slider } from '../../components/ui/Input';
+import Modal from '../../components/ui/Modal';
+import {
+  Clock,
+  CheckCircle2,
+  Trophy,
+  ArrowRight,
+  ArrowLeft,
+  Flag,
+  ExternalLink,
+  Award,
+  AlertTriangle,
+  Play,
+  Check,
+  X,
+  FileText
+} from '../../components/ui/icons';
+
+const CRITERIA = [
+  { key: 'completion', label: 'Completion & Polish', desc: 'Is the core functionality working smoothly without crashes?' },
+  { key: 'originality', label: 'Originality & Creativity', desc: 'How unique and innovative is the concept or approach?' },
+  { key: 'learning', label: 'Learning & Growth', desc: 'Did the team stretch their skills or overcome difficult challenges?' },
+  { key: 'design', label: 'Design & User Experience', desc: 'Is the interface intuitive, accessible, and well crafted?' },
+  { key: 'technology', label: 'Technical Execution', desc: 'Code quality, architecture, APIs, and stack integration.' },
+];
 
 export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const readonly = isAdminView || isReadOnly;
   const { setId, viewAsJudgeId } = useParams();
   const navigate = useNavigate();
-  const { error: toastError } = useToast();
-  const { showLoader, hideLoader } = useLoader();
-  const { user } = useAuth();
+  const { success, error: toastError, info } = useToast();
   const { activeEvent } = useActiveEvent();
+
   const [set, setSet] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scores, setScores] = useState({});
   const [feedback, setFeedback] = useState({});
   const [nominations, setNominations] = useState({});
-  const [rankings, setRankings] = useState([]); // Dynamic based on projects count
-  const [phase, setPhase] = useState('scoring'); // scoring | ranking | done
+  const [rankings, setRankings] = useState([]);
+  const [phase, setPhase] = useState('scoring'); // scoring | ranking
   const [timer, setTimer] = useState(0);
   const timerRef = useRef(null);
   const [flagModal, setFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
-  const [flagSuccess, setFlagSuccess] = useState(false);
-  const [flaggedIds, setFlaggedIds] = useState(new Set());
+  const [projectFlags, setProjectFlags] = useState({});
   const [isEditing, setIsEditing] = useState(false);
-  const [projectFlags, setProjectFlags] = useState({}); // projectId -> [flag1, flag2, ...]
-  const [flagEditMode, setFlagEditMode] = useState(false);
-  const [deleteFlagId, setDeleteFlagId] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadSetData = async () => {
-      showLoader('Loading scoring set...');
       try {
         let ev = activeEvent;
         if (!ev) {
           const eventsRes = await api.get('/events');
-          ev = eventsRes.data.find(e => e.isActive) || eventsRes.data.find(e => e.status === 'JUDGING') || eventsRes.data[0];
+          ev = eventsRes.data.find((e) => e.isActive) || eventsRes.data.find((e) => e.status === 'JUDGING') || eventsRes.data[0];
         }
 
         if (!ev) {
@@ -56,37 +79,40 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         const setData = setRes.data;
         setSet(setData);
 
-        // Pre-populate existing scores
+        // Prepopulate scores
         const existingScores = {};
         const existingFeedback = {};
         const existingNoms = {};
         for (const s of setData.scores || []) {
           existingScores[s.projectId] = {
-            completion: s.completion, originality: s.originality,
-            learning: s.learning, design: s.design, technology: s.technology
+            completion: s.completion,
+            originality: s.originality,
+            learning: s.learning,
+            design: s.design,
+            technology: s.technology,
           };
         }
         setScores(existingScores);
 
-        // Pre-populate feedback
+        // Prepopulate feedback
         for (const f of setData.feedback || []) {
           existingFeedback[f.projectId] = f.comment;
         }
         setFeedback(existingFeedback);
 
-        // Pre-populate nominations
+        // Prepopulate nominations
         for (const n of setData.nominations || []) {
           if (!existingNoms[n.projectId]) existingNoms[n.projectId] = [];
           existingNoms[n.projectId].push(n.trackId);
         }
         setNominations(existingNoms);
 
-        // Pre-populate rankings
+        // Prepopulate rankings
         const numProjects = setData.projects.length;
         const isTieBreaker = setData.setNumber === 0;
         const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
         const initialRankings = Array(reqRanks).fill(null);
-        
+
         if (setData.stackRankVotes?.length > 0) {
           const sortedVotes = [...setData.stackRankVotes].sort((a, b) => a.rank - b.rank);
           sortedVotes.slice(0, reqRanks).forEach((v, i) => {
@@ -95,15 +121,15 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         }
         setRankings(initialRankings);
 
-        // Detect edit mode: if all projects already have scores, this is a reopened set
-        const allScored = setData.projects.every(sp => 
-          setData.scores?.some(s => s.projectId === sp.project.id)
+        // Check if all scored
+        const allScored = setData.projects.every((sp) =>
+          setData.scores?.some((s) => s.projectId === sp.project.id)
         );
         if (allScored && setData.scores?.length > 0) {
           setIsEditing(true);
         }
 
-        // Fetch flags and tracks in parallel
+        // Fetch flags & tracks
         const [flagsRes, tracksRes] = await Promise.allSettled([
           api.get(`/events/${ev.id}/flags`),
           api.get(`/events/${ev.id}/tracks`)
@@ -112,9 +138,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         if (isMounted && flagsRes.status === 'fulfilled') {
           const flagsByProject = {};
           for (const flag of flagsRes.value.data) {
-            if (!flagsByProject[flag.projectId]) {
-              flagsByProject[flag.projectId] = [];
-            }
+            if (!flagsByProject[flag.projectId]) flagsByProject[flag.projectId] = [];
             flagsByProject[flag.projectId].push(flag);
           }
           setProjectFlags(flagsByProject);
@@ -124,14 +148,8 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
           setTracks(tracksRes.value.data);
         }
       } catch (err) {
-        console.error('Failed to load score set', err);
-        if (isMounted) {
-          toastError(err.response?.data?.error || 'Failed to load scoring set');
-        }
-      } finally {
-        if (isMounted) {
-          hideLoader();
-        }
+        console.error('Failed to load set data', err);
+        if (isMounted) toastError('Failed to load judging set');
       }
     };
 
@@ -141,690 +159,507 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
 
   // Timer
   useEffect(() => {
-    timerRef.current = setInterval(() => setTimer(t => t + 1), 1000);
+    if (readonly) return;
+    timerRef.current = setInterval(() => {
+      setTimer((t) => t + 1);
+    }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [currentIdx]);
+  }, [readonly]);
 
-  useEffect(() => { setTimer(0); }, [currentIdx]);
+  if (!set) {
+    return (
+      <div style={{ padding: '60px 0', textAlign: 'center' }}>
+        <span className="apple-btn-spinner" style={{ width: 28, height: 28, margin: '0 auto 16px', display: 'block' }} />
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Loading evaluation set...</p>
+      </div>
+    );
+  }
 
-  const projects = set?.projects?.map(sp => sp.project) || [];
+  const projects = set.projects.map((sp) => sp.project);
   const currentProject = projects[currentIdx];
-  const eventId = set?.eventId;
 
-  const getScore = (projectId) => scores[projectId] || { completion: 0, originality: 0, learning: 0, design: 0, technology: 0 };
+  const getScore = (projectId) => {
+    return scores[projectId] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+  };
 
-  const updateScore = (projectId, field, value) => {
-    setScores(prev => ({
+  const updateScoreField = (field, val) => {
+    if (readonly || !currentProject) return;
+    setScores((prev) => ({
       ...prev,
-      [projectId]: { ...getScore(projectId), [field]: parseInt(value) }
+      [currentProject.id]: {
+        ...getScore(currentProject.id),
+        [field]: Number(val),
+      },
     }));
   };
 
-  const timerValueRef = useRef(0);
+  const currentScore = getScore(currentProject?.id);
+  const totalScore = currentScore.completion + currentScore.originality + currentScore.learning + currentScore.design + currentScore.technology;
 
-  // Keep ref in sync with timer state so submitScore always sees latest value
-  useEffect(() => { timerValueRef.current = timer; }, [timer]);
+  const formatTimer = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
-  const submitScore = async (projectId) => {
-    if (readonly) return;
-    const s = getScore(projectId);
-    const timeSpentSeconds = timerValueRef.current;
-    await api.post(`/events/${eventId}/sets/${setId}/scores`, { projectId, ...s, timeSpentSeconds });
+  const saveCurrentProjectScore = async () => {
+    if (readonly || !currentProject) return;
+    setSaving(true);
+    try {
+      const eventId = activeEvent?.id || set.eventId;
+      const s = getScore(currentProject.id);
 
-    // Submit feedback if any
-    if (feedback[projectId]) {
-      await api.post(`/events/${eventId}/sets/${setId}/feedback`, { projectId, comment: feedback[projectId] });
-    }
-
-    // Submit nominations (always sync even if empty)
-    if (!readonly) {
-      const noms = nominations[projectId] || [];
-      await api.post(`/events/${eventId}/sets/${setId}/nominate`, { projectId, trackIds: noms });
+      await Promise.all([
+        api.post(`/events/${eventId}/sets/${setId}/scores`, {
+          projectId: currentProject.id,
+          ...s,
+          timeSpentSeconds: timer,
+        }),
+        feedback[currentProject.id]
+          ? api.post(`/events/${eventId}/sets/${setId}/feedback`, {
+              projectId: currentProject.id,
+              comment: feedback[currentProject.id],
+            })
+          : Promise.resolve(),
+        nominations[currentProject.id]
+          ? api.post(`/events/${eventId}/sets/${setId}/nominate`, {
+              projectId: currentProject.id,
+              trackIds: nominations[currentProject.id],
+            })
+          : Promise.resolve(),
+      ]);
+    } catch (err) {
+      console.error('Save failed', err);
+      toastError('Failed to save scores for this project');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleNext = async () => {
-    if (!currentProject) return;
-    await submitScore(currentProject.id);
+  const handleNextProject = async () => {
+    await saveCurrentProjectScore();
     if (currentIdx < projects.length - 1) {
-      setCurrentIdx(currentIdx + 1);
+      setCurrentIdx((prev) => prev + 1);
+      setTimer(0);
     } else {
       setPhase('ranking');
     }
   };
 
-  const handlePrev = async () => {
+  const handlePrevProject = async () => {
+    await saveCurrentProjectScore();
     if (currentIdx > 0) {
-      await submitScore(currentProject.id);
-      setCurrentIdx(currentIdx - 1);
+      setCurrentIdx((prev) => prev - 1);
+      setTimer(0);
     }
   };
 
-  const submitAllAndComplete = async () => {
-    // Save all scores first
-    for (const p of projects) {
-      await submitScore(p.id);
-    }
-    // Submit existing rankings
-    if (!rankings.includes(null) && !readonly) {
-      const data = rankings.map((projectId, i) => ({ projectId, rank: i + 1 }));
-      await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: data });
-    }
-    if (!readonly) await api.post(`/events/${eventId}/sets/${setId}/complete`);
-    showLoader('Redirecting to dashboard...');
-    setPhase('done');
-    setTimeout(() => navigate(isAdminView ? `/admin/progress` : '/judge'), 1500);
+  const toggleNomination = (trackId) => {
+    if (readonly || !currentProject) return;
+    const currentNoms = nominations[currentProject.id] || [];
+    const updated = currentNoms.includes(trackId)
+      ? currentNoms.filter((id) => id !== trackId)
+      : [...currentNoms, trackId];
+    setNominations((prev) => ({
+      ...prev,
+      [currentProject.id]: updated,
+    }));
   };
 
-  const toggleNomination = (projectId, trackId) => {
-    setNominations(prev => {
-      const current = prev[projectId] || [];
-      const has = current.includes(trackId);
-      return { ...prev, [projectId]: has ? current.filter(t => t !== trackId) : [...current, trackId] };
+  const setRankingSlot = (rankIdx, projectId) => {
+    if (readonly) return;
+    setRankings((prev) => {
+      const next = [...prev];
+      // If already assigned in another slot, clear that slot
+      const existingIdx = next.indexOf(projectId);
+      if (existingIdx !== -1) {
+        next[existingIdx] = null;
+      }
+      next[rankIdx] = projectId;
+      return next;
     });
   };
 
-  const setRanking = (rank, projectId) => {
-    setRankings(prev => {
-      const newR = [...prev];
-      // Remove if already ranked elsewhere
-      const existingIdx = newR.indexOf(projectId);
-      if (existingIdx !== -1) newR[existingIdx] = null;
-      newR[rank] = projectId;
-      return newR;
-    });
-  };
+  const submitFinalSet = async () => {
+    setSaving(true);
+    try {
+      const eventId = activeEvent?.id || set.eventId;
+      const ranksPayload = rankings.map((pid, idx) => ({ projectId: pid, rank: idx + 1 }));
 
-  const submitRankings = async () => {
-    if (rankings.includes(null)) {
-      toastError('You must rank all top positions before completing this set.');
-      return;
-    }
-    const data = rankings.map((projectId, i) => ({ projectId, rank: i + 1 }));
-    if (!readonly) {
-      await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: data });
+      await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: ranksPayload });
       await api.post(`/events/${eventId}/sets/${setId}/complete`);
+
+      success('Evaluation set submitted successfully!');
+      navigate(isAdminView ? `/admin/assignments` : `/judge`);
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to complete set');
+    } finally {
+      setSaving(false);
     }
-    showLoader('Redirecting to dashboard...');
-    setPhase('done');
-    setTimeout(() => navigate(isAdminView ? `/admin/view-judge/${viewAsJudgeId}` : '/judge'), 1500);
   };
 
-  const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
-  const timerClass = timer > 180 ? 'timer danger' : timer > 120 ? 'timer warning' : 'timer';
-
-  const getSetRange = (projects) => {
-    if (!projects || projects.length === 0) return '';
-    const sorted = [...projects].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    const firstMatch = sorted[0]?.project?.teamNumber?.match(/\d+/);
-    if (!firstMatch) return '';
-    const start = parseInt(firstMatch[0]);
-    return `${start} - ${start + sorted.length - 1}`;
+  const handleFlagSubmit = async () => {
+    if (!flagReason.trim() || !currentProject) return;
+    try {
+      const eventId = activeEvent?.id || set.eventId;
+      await api.post(`/events/${eventId}/flags`, {
+        projectId: currentProject.id,
+        reason: flagReason,
+      });
+      success('Flag submitted for organizer integrity review');
+      setFlagModal(false);
+      setFlagReason('');
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to submit flag');
+    }
   };
-
-  if (!set) return <div className="text-center mt-4"><div className="skeleton" style={{width:200,height:100,margin:'40px auto'}}/></div>;
-
-  if (phase === 'done') {
-    return null;
-  }
-
-  if (phase === 'ranking') {
-    const getTotalScore = (projectId) => {
-      const s = scores[projectId];
-      if (!s) return null;
-      return (s.completion || 0) + (s.originality || 0) + (s.learning || 0) + (s.design || 0) + (s.technology || 0);
-    };
-
-    // Sort projects by total score descending for display
-    const sortedProjects = [...projects].sort((a, b) => {
-      const sa = getTotalScore(a.id) ?? -1;
-      const sb = getTotalScore(b.id) ?? -1;
-      return sb - sa;
-    });
-
-    return (
-      <div>
-        <div className="page-header">
-          <h1>{set.setNumber === 0 
-            ? `🏆 Tie-breaker: Positions ${set.baseRank || '?'}-${(set.baseRank || 0) + projects.length - 1}` 
-            : 'Rank Your Top 3'}</h1>
-        </div>
-        <p className="text-sm text-muted mb-4">
-          {set.setNumber === 0
-            ? 'Arrange ALL teams in your preferred order. Your selection will determine the absolute final rank for these tied positions. These marks do not count towards the teams total score.'
-            : 'Select your 1st, 2nd, and 3rd place from this set. This is required to complete.'}
-        </p>
-
-        {readonly && (
-          <div style={{
-            background:'rgba(255,255,255,0.05)', 
-            padding:'10px 14px', 
-            borderRadius:10, 
-            fontSize:12, 
-            marginBottom:18, 
-            border:'1px dashed var(--border-color)', 
-            color:'var(--text-muted)',
-            display:'flex',
-            alignItems:'center',
-            gap:10
-          }}>
-            <span style={{fontSize:16}}>📍</span>
-            <span>{isAdminView ? 'VIEWING ONLY: You cannot re-order projects.' : 'READ ONLY: Results are already submitted.'}</span>
-          </div>
-        )}
-
-        {rankings.map((_, rank) => (
-          <div key={rank} style={{marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:8}}>
-              {set.setNumber === 0 
-                ? `Rank Slot #${rank + 1} (Position ${ (set.baseRank || 0) + rank })`
-                : rank === 0 ? '🥇 1st Place (3 pts)' : rank === 1 ? '🥈 2nd Place (2 pts)' : '🥉 3rd Place (1 pt)'
-              }
-            </div>
-            <div style={{display:'grid',gap:8}}>
-              {sortedProjects.map(p => {
-                const total = getTotalScore(p.id);
-                const scoreColor = total === null ? 'var(--text-muted)' : total >= 40 ? 'var(--success)' : total >= 25 ? 'var(--warning)' : 'var(--danger)';
-                return (
-                  <div
-                    key={p.id}
-                    className={`rank-card ${rankings[rank] === p.id ? `rank-${rank+1}` : ''}`}
-                    onClick={() => !readonly && setRanking(rank, p.id)}
-                    style={{...readonly ? {cursor:'default'} : {}, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12}}
-                  >
-                    <div style={{display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0}}>
-                      <div className="rank-badge">{rankings[rank] === p.id ? rank + 1 : '·'}</div>
-                      <div style={{minWidth:0}}>
-                        <strong style={{fontSize:14, display:'block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{p.title}</strong>
-                        <div className="text-sm text-muted">{p.team?.name}</div>
-                      </div>
-                    </div>
-                    {/* Total score badge */}
-                    <div style={{
-                      flexShrink:0,
-                      display:'flex', flexDirection:'column', alignItems:'flex-end',
-                      gap:2
-                    }}>
-                      {total !== null ? (
-                        <span style={{
-                          fontWeight:800, fontSize:16, color: scoreColor, lineHeight:1
-                        }}>{total}<span style={{fontSize:11, fontWeight:500, color:'var(--text-muted)'}}>/ 50</span></span>
-                      ) : (
-                        <span style={{fontSize:11, color:'var(--text-muted)'}}>—</span>
-                      )}
-                      {total !== null && (
-                        <div style={{width:48, height:4, borderRadius:2, background:'var(--bg-input)', overflow:'hidden'}}>
-                          <div style={{width:`${(total/50)*100}%`, height:'100%', background:scoreColor, borderRadius:2, transition:'width 0.3s'}} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-
-        <div className="flex gap-3 mt-4">
-          {!readonly && (
-            <button className="btn btn-ghost btn-lg" style={{flex:1}} onClick={() => { setCurrentIdx(projects.length - 1); setPhase('scoring'); }}>
-              ← Back to Scoring
-            </button>
-          )}
-          <button className="btn btn-success btn-lg" style={{flex:2}} onClick={() => readonly ? navigate(-1) : submitRankings()} disabled={!readonly && (rankings.includes(null) || rankings.length === 0)}>
-            {readonly ? '← Back to Queue' : '✓ Submit Rankings & Complete Set'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Scoring phase
-  const s = getScore(currentProject?.id);
 
   return (
     <div>
-      {readonly && (
-        <div className="card mb-4" style={{
-          background: isAdminView ? 'rgba(var(--accent-rgb), 0.1)' : 'rgba(255,255,255,0.03)', 
-          border: `1px solid ${isAdminView ? 'var(--accent)' : 'var(--border-color)'}`, 
-          display:'flex', 
-          alignItems:'center', 
-          justifyContent:'space-between',
-          padding: '12px 16px'
-        }}>
-          <div>
-            <strong style={{color: isAdminView ? 'var(--accent)' : 'var(--text-primary)'}}>
-              {isAdminView ? '👀 VIEW ONLY MODE' : '📖 READ ONLY VIEW'}
-            </strong>
-            <div className="text-sm text-muted">
-              {isAdminView ? `Viewing Judge: ${set?.judge?.name}. Actions are disabled.` : 'Click teams to see scores, or jump to rankings to see your final order.'}
-            </div>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>✕ Close</button>
-        </div>
-      )}
-      <div className="flex items-center justify-between" style={{marginBottom:16}}>
+      {/* Top Banner & Stepper Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <span className="text-sm text-muted">{set.setNumber === 0 ? '🏆 Tie-breaker Round' : `Set ${set.column} • ${getSetRange(set.projects)}`}</span>
-          <div style={{fontSize:12,color:'var(--text-muted)'}}>Project {currentIdx + 1} of {projects.length}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-tertiary)' }}>
+              Set #{set.setNumber} {set.setNumber === 0 ? '• Tie Breaker' : ''}
+            </span>
+            <span style={{ color: 'var(--text-tertiary)' }}>•</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+              {phase === 'scoring' ? `Project ${currentIdx + 1} of ${projects.length}` : 'Final Priority Ranking'}
+            </span>
+          </div>
+          <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {phase === 'scoring' ? currentProject?.title : 'Stack Rank Top Projects'}
+          </h2>
         </div>
-        <div className={timerClass}>{formatTime(timer)}</div>
+
+        {/* Live Timer Pill */}
+        {!readonly && (
+          <div
+            className="tabular-nums"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-pill)',
+              background: timer >= 180 ? 'var(--accent-warning-tint)' : 'var(--bg-surface-elevated)',
+              border: `1px solid ${timer >= 180 ? 'var(--accent-warning)' : 'var(--border-subtle)'}`,
+              color: timer >= 180 ? 'var(--accent-warning)' : 'var(--text-primary)',
+              fontWeight: 600,
+              fontSize: 'var(--font-size-sm)'
+            }}
+          >
+            <Clock size={15} />
+            <span>{formatTimer(timer)}</span>
+          </div>
+        )}
       </div>
 
-      {/* Edit mode banner */}
-      {isEditing && phase === 'scoring' && !readonly && (
-        <div className="card mb-4" style={{borderLeft:'3px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
-          <div>
-            <strong>✏️ Edit Mode</strong>
-            <div className="text-sm text-muted">Click any project below to edit scores, or jump to rankings.</div>
-          </div>
-          <div className="flex gap-2">
-            <button className="btn btn-ghost" onClick={() => setPhase('ranking')}>
-              🏆 Edit Rankings
-            </button>
-            <button className="btn btn-success" onClick={submitAllAndComplete} disabled={rankings.includes(null)}>
-              ✓ Save & Complete
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Stepper bar across projects */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
+        {projects.map((p, idx) => {
+          const isDone = scores[p.id] !== undefined;
+          const isCurrent = idx === currentIdx && phase === 'scoring';
 
-      {/* Project jump nav for edit mode or readonly view */}
-      {(isEditing || readonly) && phase === 'scoring' && (
-        <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
-          {projects.map((p, i) => (
+          return (
             <button
               key={p.id}
-              className={`btn btn-sm ${i === currentIdx ? 'btn-primary' : 'btn-ghost'}`}
-              style={{fontSize:11,padding:'4px 10px'}}
-              onClick={() => setCurrentIdx(i)}
-            >
-              {p.title}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Progress bar */}
-      <div style={{display:'flex',gap:4,marginBottom:20}}>
-        {projects.map((p, i) => (
-          <div key={i} style={{flex:1,height:4,borderRadius:2,background: i < currentIdx ? 'var(--success)' : i === currentIdx ? 'var(--accent)' : 'var(--bg-input)'}} />
-        ))}
-      </div>
-
-      {/* Project info */}
-      <div className="card mb-4">
-        <div className="flex items-center gap-2">
-          <h2 style={{fontSize:18,marginBottom:4}}>{currentProject?.title}</h2>
-          {(currentProject?.status === 'FLAGGED' || flaggedIds.has(currentProject?.id)) && <span className="badge" style={{background:'#ff4444',color:'#fff',fontSize:10}}>🚩 FLAGGED</span>}
-        </div>
-        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-          <span className="badge badge-info" style={{fontSize:11}}>Team No: {currentProject?.teamNumber}</span>
-          <span className="badge" style={{fontSize:11,background:'var(--bg-input)',color:'var(--text-primary)'}}>👥 {currentProject?.team?.name}</span>
-          <span className="badge" style={{fontSize:11,background:'var(--bg-input)',color:'var(--text-primary)'}}>📍 {currentProject?.roomNumber}</span>
-          <span className="badge" style={{fontSize:11,background:'var(--bg-input)',color:'var(--text-primary)'}}>👤 Leader: {currentProject?.leaderName}</span>
-          <span className="badge" style={{fontSize:11,background:'var(--bg-input)',color:'var(--text-primary)'}}>📞 {currentProject?.team?.phone}</span>
-          {set.setNumber === 0 && <span className="badge badge-warning" style={{fontSize:11}}>🏆 TIE-BREAKER ROUND</span>}
-        </div>
-        {currentProject?.demoLink && <a href={currentProject.demoLink} target="_blank" className="text-sm" style={{color:'var(--accent)',marginTop:8,display:'inline-block'}}>🔗 Demo</a>}
-      </div>
-
-      {/* Score sliders */}
-      <div className="card mb-4">
-        <div className="card-title" style={{marginBottom:16}}>Scores (0-10)</div>
-        <div className="score-slider-group">
-          {['completion', 'originality', 'learning', 'design', 'technology'].map(field => (
-            <div key={field} className="score-row">
-              <span className="score-label" style={{textTransform:'capitalize'}}>{field}</span>
-              <input type="range" className="score-slider" min="0" max="10" value={s[field]} onChange={e => updateScore(currentProject.id, field, e.target.value)} disabled={readonly} />
-              <span className="score-value">{s[field]}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{textAlign:'right',marginTop:12,fontSize:18,fontWeight:700,color:'var(--accent)'}}>
-          Total: {s.completion + s.originality + s.learning + s.design + s.technology}/50
-        </div>
-      </div>
-
-      {/* Track nominations */}
-      {tracks.length > 0 && (
-        <div className="card mb-4">
-          <div className="card-title" style={{marginBottom:12}}>Track Nominations (optional)</div>
-          <div className="flex gap-2 flex-wrap">
-            {tracks.map(t => (
-              <span
-                key={t.id}
-                className={`track-badge ${(nominations[currentProject?.id] || []).includes(t.id) ? 'selected' : ''}`}
-                style={{background: `${t.color}20`, color: t.color, cursor: readonly ? 'default' : 'pointer'}}
-                onClick={() => !readonly && toggleNomination(currentProject.id, t.id)}
-              >
-                {t.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Feedback */}
-      <div className="card mb-4">
-        <div className="card-title" style={{marginBottom:8}}>Feedback (optional)</div>
-        <textarea
-          className="form-textarea"
-          placeholder={isAdminView ? "No feedback provided." : "Brief comment for the team..."}
-          value={feedback[currentProject?.id] || ''}
-          onChange={e => !readonly && setFeedback(prev => ({...prev, [currentProject.id]: e.target.value}))}
-          style={{minHeight:60}}
-          readOnly={readonly}
+              type="button"
+              onClick={() => {
+                saveCurrentProjectScore();
+                setCurrentIdx(idx);
+                setPhase('scoring');
+              }}
+              style={{
+                flex: 1,
+                height: 6,
+                borderRadius: 'var(--radius-pill)',
+                background: isCurrent ? 'var(--accent)' : isDone ? 'var(--accent-success)' : 'rgba(255,255,255,0.08)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'background var(--transition-fast)'
+              }}
+              title={`${idx + 1}. ${p.title} (${isDone ? 'Scored' : 'Pending'})`}
+            />
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => {
+            saveCurrentProjectScore();
+            setPhase('ranking');
+          }}
+          style={{
+            flex: 1,
+            height: 6,
+            borderRadius: 'var(--radius-pill)',
+            background: phase === 'ranking' ? 'var(--accent-purple)' : 'rgba(255,255,255,0.08)',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'background var(--transition-fast)'
+          }}
+          title="Stack Ranking Phase"
         />
       </div>
 
-      {/* Flag */}
-      {!readonly && (
-        <div style={{marginBottom:16}}>
-          {(() => {
-            const allFlags = projectFlags[currentProject?.id] || [];
-            const myFlag = allFlags.find(f => f.flaggedBy === user?.id);
-            const otherFlags = allFlags.filter(f => f.flaggedBy !== user?.id);
-
-            return (
-              <>
-                {/* My Flag Section */}
-                {myFlag ? (
-                  (() => {
-                    const isOpenOrReviewed = myFlag.status === 'OPEN' || myFlag.status === 'REVIEWED';
-                    const isDismissed = myFlag.status === 'DISMISSED';
-                    const statusColor = myFlag.status === 'OPEN' ? 'var(--accent)' : myFlag.status === 'REVIEWED' ? 'var(--warning)' : 'var(--success)';
-                    const statusEmoji = myFlag.status === 'OPEN' ? '🚩' : myFlag.status === 'REVIEWED' ? '⚠️' : '✅';
-
-                    return (
-                      <div style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        border: `1px solid ${statusColor}`,
-                        borderRadius: 10,
-                        padding: 16,
-                        marginBottom: 16
-                      }}>
-                        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
-                          <span style={{fontSize:20}}>{statusEmoji}</span>
-                          <div style={{flex:1}}>
-                            <div style={{fontWeight:600}}>
-                              {myFlag.status === 'OPEN' ? '🚩 My Flag (Open)' : myFlag.status === 'REVIEWED' ? '⚠️ My Flag (Reviewed by Admin)' : '✅ My Flag (Resolved)'}
-                            </div>
-                            <div className="text-sm text-muted" style={{fontSize:11}}>
-                              {myFlag.status === 'OPEN'
-                                ? 'Awaiting admin review. You can edit or delete this flag.'
-                                : myFlag.status === 'REVIEWED'
-                                ? 'Admin has reviewed and confirmed this flag is valid.'
-                                : 'This flag has been dismissed. You can raise a new flag if needed.'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {isOpenOrReviewed && (
-                          <>
-                            <div className="form-group" style={{marginBottom:12}}>
-                              <label className="form-label text-sm" style={{marginBottom:4}}>Reason</label>
-                              {flagEditMode ? (
-                                <>
-                                  <textarea
-                                    className="form-textarea"
-                                    placeholder="Edit the reason..."
-                                    value={flagReason}
-                                    onChange={e => setFlagReason(e.target.value)}
-                                    style={{minHeight:60}}
-                                  />
-                                  <div className="flex gap-2" style={{marginTop:8}}>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => {
-                                      setFlagEditMode(false);
-                                      setFlagReason('');
-                                    }}>Cancel</button>
-                                    <button className="btn btn-primary btn-sm" disabled={!flagReason.trim()} onClick={async () => {
-                                      try {
-                                        await api.put(`/events/${eventId}/flags/${myFlag.id}/edit-reason`, { reason: flagReason });
-                                        setProjectFlags(prev => ({
-                                          ...prev,
-                                          [currentProject.id]: prev[currentProject.id].map(f => 
-                                            f.id === myFlag.id ? { ...f, reason: flagReason } : f
-                                          )
-                                        }));
-                                        setFlagEditMode(false);
-                                        setFlagReason('');
-                                      } catch (err) {
-                                        toastError('Failed to update flag: ' + (err.response?.data?.error || err.message));
-                                      }
-                                    }}>Save Changes</button>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, marginBottom:8}}>
-                                    {myFlag.reason}
-                                  </div>
-                                  {myFlag.status === 'OPEN' && (
-                                    <div className="flex gap-2">
-                                      <button className="btn btn-ghost btn-sm" onClick={() => {
-                                        setFlagReason(myFlag.reason);
-                                        setFlagEditMode(true);
-                                      }}>✏️ Edit</button>
-                                      <button className="btn btn-ghost btn-sm" onClick={() => setDeleteFlagId(myFlag.id)}>🗑️ Delete</button>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                            {myFlag.adminNotes && (
-                              <div className="form-group" style={{marginBottom:12}}>
-                                <label className="form-label text-sm" style={{marginBottom:4}}>Admin Notes</label>
-                                <div className="text-sm" style={{background:'rgba(255,200,100,0.1)', border:'1px solid rgba(255,200,100,0.3)', padding:10, borderRadius:8, color:'var(--warning)'}}>
-                                  {myFlag.adminNotes}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {isDismissed && (
-                          <>
-                            <div className="form-group" style={{marginBottom:16}}>
-                              <label className="form-label text-sm" style={{marginBottom:4}}>Previous Reason</label>
-                              <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
-                                {myFlag.reason}
-                              </div>
-                              {myFlag.adminNotes && (
-                                <>
-                                  <label className="form-label text-sm" style={{marginTop:12, marginBottom:4}}>Admin Notes</label>
-                                  <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:10, borderRadius:8, color:'var(--text-muted)', fontStyle:'italic'}}>
-                                    {myFlag.adminNotes}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                            <button 
-                              className="btn btn-primary btn-sm"
-                              onClick={() => {
-                                setFlagReason('');
-                                setFlagSuccess(false);
-                                setFlagEditMode(false);
-                                setFlagModal(true);
-                              }}
-                            >
-                              🚩 Raise New Flag
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setFlagReason(''); setFlagSuccess(false); setFlagModal(true); }}>🚩 Flag Project</button>
-                )}
-
-                {/* Other Judges' Flags Section */}
-                {otherFlags.length > 0 && (
-                  <div style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 10,
-                    padding: 16,
-                    marginTop: 12
-                  }}>
-                    <div style={{fontWeight:600, marginBottom:12, fontSize:13}}>
-                      👥 Flags from Other Judges ({otherFlags.length})
-                    </div>
-                    {otherFlags.map((flag, idx) => {
-                      const statusColor = flag.status === 'OPEN' ? 'var(--accent)' : flag.status === 'REVIEWED' ? 'var(--warning)' : 'var(--success)';
-                      const statusEmoji = flag.status === 'OPEN' ? '🚩' : flag.status === 'REVIEWED' ? '⚠️' : '✅';
-                      return (
-                        <div key={flag.id} style={{
-                          background: 'rgba(255,255,255,0.03)',
-                          border: `1px solid ${statusColor}`,
-                          borderRadius: 8,
-                          padding: 12,
-                          marginBottom: idx < otherFlags.length - 1 ? 12 : 0
-                        }}>
-                          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
-                            <span style={{fontSize:16}}>{statusEmoji}</span>
-                            <div>
-                              <div style={{fontWeight:600, fontSize:12}}>
-                                {flag.creator?.name || 'Unknown Judge'} <span className="text-sm text-muted">({flag.creator?.role || 'JUDGE'})</span>
-                              </div>
-                              <div className="text-sm text-muted" style={{fontSize:10}}>
-                                Status: {flag.status}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-sm" style={{background:'rgba(255,255,255,0.05)', padding:8, borderRadius:6, fontSize:12}}>
-                            {flag.reason}
-                          </div>
-                          {flag.adminNotes && (
-                            <div className="text-sm" style={{background:'rgba(255,200,100,0.1)', border:'1px solid rgba(255,200,100,0.3)', padding:8, borderRadius:6, color:'var(--warning)', marginTop:8, fontSize:11}}>
-                              <strong>Admin Notes:</strong> {flag.adminNotes}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Flag Modal */}
-      {flagModal && (
-        <div style={{position:'fixed',inset:0,zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
-          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)'}} onClick={() => setFlagModal(false)} />
-          <div style={{position:'relative',background:'var(--bg-card)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-lg)',padding:24,width:'100%',maxWidth:420,boxShadow:'0 20px 60px rgba(0,0,0,0.4)'}}>
-            {flagSuccess ? (
-              <div style={{textAlign:'center',padding:'20px 0'}}>
-                <div style={{fontSize:48,marginBottom:12}}>🚩</div>
-                <h3 style={{marginBottom:8}}>Project Flagged</h3>
-                <p className="text-sm text-muted">The admin has been notified.</p>
-              </div>
-            ) : (
-              <>
-                <h3 style={{marginBottom:4}}>🚩 Flag Project</h3>
-                <p className="text-sm text-muted" style={{marginBottom:16}}>Describe why this project should be reviewed by admins.</p>
-                <textarea
-                  className="form-textarea"
-                  placeholder="e.g. Suspected plagiarism, team absent, demo not working..."
-                  value={flagReason}
-                  onChange={e => setFlagReason(e.target.value)}
-                  style={{minHeight:100}}
-                  autoFocus
-                />
-                <div className="flex gap-2" style={{marginTop:16,justifyContent:'flex-end'}}>
-                  <button className="btn btn-ghost" onClick={() => setFlagModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" disabled={!flagReason.trim()} onClick={async () => {
-                    try {
-                      const res = await api.post(`/events/${eventId}/flags`, { projectId: currentProject.id, reason: flagReason });
-                      setFlaggedIds(prev => new Set([...prev, currentProject.id]));
-                      setProjectFlags(prev => {
-                        const existing = prev[currentProject.id] || [];
-                        // Upsert: replace if exists, otherwise append
-                        const myFlagIdx = existing.findIndex(f => f.flaggedBy === user?.id);
-                        if (myFlagIdx >= 0) {
-                          existing[myFlagIdx] = res.data;
-                          return { ...prev, [currentProject.id]: [...existing] };
-                        } else {
-                          return { ...prev, [currentProject.id]: [...existing, res.data] };
-                        }
-                      });
-                      setFlagSuccess(true);
-                      setTimeout(() => setFlagModal(false), 1500);
-                    } catch (err) {
-                      toastError('Failed to submit flag: ' + (err.response?.data?.error || err.message));
-                    }
-                  }}>Submit Flag</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Delete Flag Confirmation Modal */}
-      {deleteFlagId && (() => {
-        const flagToDelete = (projectFlags[currentProject?.id] || []).find(f => f.id === deleteFlagId);
-        return (
-          <div className="modal-overlay" onClick={() => setDeleteFlagId(null)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
-              <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
-              <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
-                <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
-                <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Flag?</h2>
-                <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
-                  Are you sure you want to delete this flag?
-                  <br/><br/>
-                  <strong style={{color: 'var(--text-primary)'}}>{currentProject?.title}</strong>
-                  <br/><br/>
-                  This action <strong>cannot be undone</strong>.
+      {phase === 'scoring' ? (
+        /* Phase 1: Rubric Scoring & Project Info */
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(360px, 1.4fr)', gap: 24, alignItems: 'start' }}>
+          {/* Left Column: Project Overview */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Card
+              title={currentProject?.title}
+              subtitle={`Team: ${currentProject?.team?.name || 'Unknown'} • Room ${currentProject?.roomNumber || 'TBD'}`}
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={Flag}
+                  onClick={() => setFlagModal(true)}
+                  style={{ color: 'var(--accent-danger)' }}
+                >
+                  Flag
+                </Button>
+              }
+            >
+              <div style={{ marginBottom: 16 }}>
+                <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Description
+                </span>
+                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  {currentProject?.description || 'No project description provided.'}
                 </p>
               </div>
-              <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
-                <button className="btn btn-ghost" onClick={() => setDeleteFlagId(null)} style={{flex: 1}}>Cancel</button>
-                <button className="btn btn-danger" onClick={async () => {
-                  try {
-                    await api.delete(`/events/${eventId}/flags/${deleteFlagId}`);
-                    setProjectFlags(prev => ({
-                      ...prev,
-                      [currentProject.id]: prev[currentProject.id].filter(f => f.id !== deleteFlagId)
-                    }));
-                    setFlaggedIds(prev => {
-                      const newSet = new Set(prev);
-                      const otherFlags = (projectFlags[currentProject.id] || []).filter(f => f.id !== deleteFlagId && f.flaggedBy !== user?.id);
-                      // Only remove from flaggedIds if no other active flags remain
-                      if (!otherFlags.some(f => f.status === 'OPEN' || f.status === 'REVIEWED')) {
-                        newSet.delete(currentProject.id);
-                      }
-                      return newSet;
-                    });
-                    setDeleteFlagId(null);
-                  } catch (err) {
-                    toastError('Failed to delete flag: ' + (err.response?.data?.error || err.message));
-                  }
-                }} style={{flex: 1}}>
-                  🗑 Delete Flag
-                </button>
+
+              {/* Demo Links */}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+                {currentProject?.demoLink && (
+                  <a
+                    href={currentProject.demoLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="apple-btn apple-btn-secondary apple-btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <ExternalLink size={14} /> Open Demo
+                  </a>
+                )}
+                {currentProject?.videoUrl && (
+                  <a
+                    href={currentProject.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="apple-btn apple-btn-secondary apple-btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Play size={14} /> Watch Video
+                  </a>
+                )}
               </div>
+
+              {/* Team Leader Contact */}
+              {currentProject?.leaderName && (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+                  Team Lead: <strong style={{ color: 'var(--text-secondary)' }}>{currentProject.leaderName}</strong>
+                </div>
+              )}
+            </Card>
+
+            {/* Track Nominations */}
+            {tracks.length > 0 && (
+              <Card title="Category Nominations" subtitle="Nominate this project for special track prizes">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {tracks.map((t) => {
+                    const isNominated = (nominations[currentProject?.id] || []).includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleNomination(t.id)}
+                        disabled={readonly}
+                        className={`apple-badge apple-badge-md ${isNominated ? 'apple-badge-purple' : 'apple-badge-default'}`}
+                        style={{ cursor: readonly ? 'default' : 'pointer', border: '1px solid var(--border-subtle)' }}
+                      >
+                        <Award size={13} />
+                        <span>{t.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+
+            {/* Judge Private Notes */}
+            <Card title="Private Notes & Feedback" subtitle="Constructive comments for organizers or participants">
+              <textarea
+                value={feedback[currentProject?.id] || ''}
+                onChange={(e) => setFeedback({ ...feedback, [currentProject.id]: e.target.value })}
+                disabled={readonly}
+                placeholder="Write specific feedback on technical strengths, UI polish, or suggestions..."
+                rows={3}
+                className="apple-input"
+                style={{ resize: 'vertical' }}
+              />
+            </Card>
+          </div>
+
+          {/* Right Column: Scoring Rubric Sliders */}
+          <Card
+            title="Evaluation Rubric"
+            subtitle="Rate each criterion from 0 (poor) to 10 (exceptional)"
+            action={
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <span className="tabular-nums" style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700, color: 'var(--accent)' }}>
+                  {totalScore}
+                </span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-tertiary)' }}>/ 50</span>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {CRITERIA.map((crit) => (
+                <div key={crit.key} style={{ paddingBottom: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+                  <Slider
+                    label={crit.label}
+                    min={0}
+                    max={10}
+                    value={currentScore[crit.key]}
+                    onChange={(e) => updateScoreField(crit.key, e.target.value)}
+                    disabled={readonly}
+                  />
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: -6 }}>
+                    {crit.desc}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Stepper Navigation Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 12 }}>
+              <Button
+                variant="secondary"
+                size="md"
+                icon={ArrowLeft}
+                disabled={currentIdx === 0}
+                onClick={handlePrevProject}
+              >
+                Previous
+              </Button>
+
+              <Button
+                variant="primary"
+                size="md"
+                icon={currentIdx === projects.length - 1 ? Trophy : ArrowRight}
+                iconPosition="right"
+                loading={saving}
+                onClick={handleNextProject}
+              >
+                {currentIdx === projects.length - 1 ? 'Go to Stack Ranking' : 'Save & Next'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        /* Phase 2: Priority Stack Ranking */
+        <Card
+          title="Stack Rank Top Projects"
+          subtitle="Assign priority ranks for Borda count scoring (1st = 3 pts, 2nd = 2 pts, 3rd = 1 pt)"
+        >
+          <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {rankings.map((selectedId, rIdx) => {
+              const rankLabels = ['🥇 1st Place (3 Points)', '🥈 2nd Place (2 Points)', '🥉 3rd Place (1 Point)'];
+              const label = rankLabels[rIdx] || `Rank #${rIdx + 1}`;
+
+              return (
+                <div
+                  key={rIdx}
+                  style={{
+                    padding: 16,
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)'
+                  }}
+                >
+                  <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+                    {label}
+                  </div>
+
+                  <select
+                    value={selectedId || ''}
+                    onChange={(e) => setRankingSlot(rIdx, e.target.value || null)}
+                    disabled={readonly}
+                    className="apple-select"
+                  >
+                    <option value="">-- Choose Project --</option>
+                    {projects.map((p) => {
+                      const s = getScore(p.id);
+                      const total = s.completion + s.originality + s.learning + s.design + s.technology;
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({total}/50 marks)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              );
+            })}
+
+            {/* Bottom Finalize Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 16 }}>
+              <Button
+                variant="secondary"
+                size="lg"
+                icon={ArrowLeft}
+                onClick={() => setPhase('scoring')}
+              >
+                Back to Scoring
+              </Button>
+
+              {!readonly && (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  icon={CheckCircle2}
+                  loading={saving}
+                  disabled={rankings.includes(null)}
+                  onClick={submitFinalSet}
+                >
+                  Complete & Submit Set
+                </Button>
+              )}
             </div>
           </div>
-        );
-      })()}
+        </Card>
+      )}
 
-      <div className="flex gap-3 mt-4">
-        {currentIdx > 0 && (
-          <button className="btn btn-ghost btn-lg flex-1" onClick={handlePrev}>
-            ← Previous
-          </button>
-        )}
-        <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={handleNext}>
-          {currentIdx < projects.length - 1 ? 'Next Project →' : readonly ? 'View Ranking →' : 'Finish Scoring → Rank'}
-        </button>
-      </div>
+      {/* Flag Project Modal */}
+      <Modal
+        isOpen={flagModal}
+        onClose={() => setFlagModal(false)}
+        title={`Flag Project: ${currentProject?.title}`}
+        subtitle="Report discrepancies, non-functional demos, or pre-built codebases to organizers"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setFlagModal(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleFlagSubmit}>Submit Flag</Button>
+          </>
+        }
+      >
+        <div style={{ marginBottom: 14, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+          Flagging routes this submission to the organizer integrity triage board for code inspection.
+        </div>
+        <textarea
+          value={flagReason}
+          onChange={(e) => setFlagReason(e.target.value)}
+          placeholder="Describe the issue (e.g. Broken demo link, project created before hackathon started)..."
+          rows={4}
+          className="apple-input"
+          style={{ resize: 'vertical' }}
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 }

@@ -1,99 +1,205 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useActiveEvent } from '../../context/ActiveEventContext';
 import api from '../../services/api';
-import { useLoader } from '../../context/LoaderContext';
+import { useToast } from '../../context/ToastContext';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import EmptyState from '../../components/ui/EmptyState';
+import {
+  FolderGit2,
+  Edit3,
+  ExternalLink,
+  Play,
+  CheckCircle2,
+  Clock,
+  Sparkles
+} from '../../components/ui/icons';
 
 export default function TeamDashboard() {
   const { user } = useAuth();
-  const [events, setEvents] = useState([]);
+  const { activeEvent } = useActiveEvent();
+  const { success, error: toastError } = useToast();
+
   const [project, setProject] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', demoLink: '', videoUrl: '' });
-  const { showLoader, hideLoader } = useLoader();
+
+  const fetchTeamProject = async () => {
+    try {
+      const eventsRes = await api.get('/events');
+      const targetEvent = activeEvent || eventsRes.data.find((e) => e.isActive) || eventsRes.data[0];
+      if (targetEvent) {
+        const pr = await api.get(`/events/${targetEvent.id}/projects`);
+        const mine = pr.data.find((p) => p.team?.id === user?.id);
+        if (mine) {
+          setProject(mine);
+          setForm({
+            title: mine.title,
+            description: mine.description || '',
+            demoLink: mine.demoLink || '',
+            videoUrl: mine.videoUrl || '',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch project', err);
+    }
+  };
 
   useEffect(() => {
-      showLoader('Loading your project...');
-    api.get('/events').then(r => {
-      setEvents(r.data);
-      if (r.data.length) {
-        api.get(`/events/${r.data[0].id}/projects`).then(pr => {
-          const mine = pr.data.find(p => p.team?.id === user?.id);
-          if (mine) {
-            setProject(mine);
-            setForm({ title: mine.title, description: mine.description || '', demoLink: mine.demoLink || '', videoUrl: mine.videoUrl || '' });
-          }
-        }).finally(() => hideLoader());
-      } else {
-        hideLoader();
-      }
-    }).catch(() => hideLoader());
-  }, [user]);
+    fetchTeamProject();
+  }, [user, activeEvent]);
 
-  const handleSave = async () => {
+  const handleSave = async (e) => {
+    e.preventDefault();
     if (!project) return;
-    const ev = events[0];
-    const res = await api.put(`/events/${ev.id}/projects/${project.id}`, form);
-    setProject(res.data);
-    setEditing(false);
+    setSaving(true);
+    try {
+      const eventId = activeEvent?.id || project.eventId;
+      const res = await api.put(`/events/${eventId}/projects/${project.id}`, form);
+      setProject(res.data);
+      setEditing(false);
+      success('Project submission updated successfully!');
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to update project');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Welcome, {user?.name}!</h1>
-        <span className="badge badge-info">{project?.teamNumber}</span>
-      </div>
+      <PageHeader
+        title={`Welcome, ${user?.name}!`}
+        subtitle="Participant Portal • Manage submission details and view judging feedback"
+        badge={
+          project?.status === 'SCORED' ? (
+            <Badge variant="success" icon={CheckCircle2}>Evaluation Complete</Badge>
+          ) : project?.status === 'UNDER_REVIEW' ? (
+            <Badge variant="warning" dot pulse>In Evaluation</Badge>
+          ) : (
+            <Badge variant="primary">Submitted</Badge>
+          )
+        }
+        actions={
+          project && !editing && (
+            <Button
+              variant="secondary"
+              size="md"
+              icon={Edit3}
+              onClick={() => setEditing(true)}
+            >
+              Edit Submission
+            </Button>
+          )
+        }
+      />
 
       {!project ? (
-        <div className="empty-state"><div className="empty-state-icon">📁</div><h3>No Project Yet</h3><p>Your admin will create a project for your team.</p></div>
+        <Card>
+          <EmptyState
+            icon={FolderGit2}
+            title="No Project Assigned"
+            description="Your team account does not have a linked project in the active hackathon yet. Please ask an organizer to register your project."
+          />
+        </Card>
       ) : (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">{editing ? 'Edit Project' : project.title}</span>
-            {!editing && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>✏️ Edit</button>}
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr)', gap: 20 }}>
+          <Card
+            title={editing ? "Edit Submission Details" : project.title}
+            subtitle={
+              editing
+                ? "Update your title, demo links, and description"
+                : `Team #${project.teamNumber || '—'} • Assigned Location: Room ${project.roomNumber || 'TBD'}`
+            }
+          >
+            {editing ? (
+              <form onSubmit={handleSave}>
+                <Input
+                  label="Project Title"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="Project name"
+                  required
+                />
 
-          {editing ? (
-            <div>
-              <div className="form-group">
-                <label className="form-label">Project Title</label>
-                <input className="form-input" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Description</label>
-                <textarea className="form-textarea" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Demo Link</label>
-                <input className="form-input" value={form.demoLink} onChange={e => setForm({...form, demoLink: e.target.value})} placeholder="https://..." />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Video URL</label>
-                <input className="form-input" value={form.videoUrl} onChange={e => setForm({...form, videoUrl: e.target.value})} placeholder="https://..." />
-              </div>
-              <div className="flex gap-2">
-                <button className="btn btn-primary" onClick={handleSave}>Save</button>
-                <button className="btn btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p className="text-muted" style={{marginBottom:16}}>{project.description || 'No description yet.'}</p>
-              <div className="stats-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))'}}>
-                <div className="stat-card">
-                  <div style={{fontSize:20}}>📍</div>
-                  <div className="stat-label">Room No.</div>
-                  <div style={{fontWeight:600}}>{project.roomNumber || '—'}</div>
+                <div className="apple-form-group">
+                  <label className="apple-form-label">Description & Concept</label>
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    rows={4}
+                    className="apple-input"
+                    style={{ resize: 'vertical' }}
+                    placeholder="Briefly describe what your project does and how it was built..."
+                  />
                 </div>
-                <div className="stat-card">
-                  <div style={{fontSize:20}}>📊</div>
-                  <div className="stat-label">Status</div>
-                  <div><span className={`badge ${project.status === 'SCORED' ? 'badge-success' : project.status === 'FLAGGED' ? 'badge-danger' : 'badge-info'}`}>{project.status}</span></div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <Input
+                    label="Live Demo Link"
+                    type="url"
+                    value={form.demoLink}
+                    onChange={(e) => setForm({ ...form, demoLink: e.target.value })}
+                    placeholder="https://..."
+                  />
+                  <Input
+                    label="Demo Video Link"
+                    type="url"
+                    value={form.videoUrl}
+                    onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
+                    placeholder="https://youtube.com/..."
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                  <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+                  <Button variant="primary" loading={saving} type="submit">Save Changes</Button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <div style={{ marginBottom: 18 }}>
+                  <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    About Project
+                  </span>
+                  <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    {project.description || 'No description provided yet.'}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+                  {project.demoLink && (
+                    <a
+                      href={project.demoLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="apple-btn apple-btn-secondary apple-btn-sm"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <ExternalLink size={14} /> Open Demo
+                    </a>
+                  )}
+                  {project.videoUrl && (
+                    <a
+                      href={project.videoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="apple-btn apple-btn-secondary apple-btn-sm"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <Play size={14} /> Watch Video
+                    </a>
+                  )}
                 </div>
               </div>
-              {project.demoLink && <p style={{marginTop:8}}><a href={project.demoLink} target="_blank" style={{color:'var(--accent)'}}>🔗 Demo Link</a></p>}
-            </div>
-          )}
+            )}
+          </Card>
         </div>
       )}
     </div>

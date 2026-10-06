@@ -1,9 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { useLoader } from '../../context/LoaderContext';
+import { useToast } from '../../context/ToastContext';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button, IconButton } from '../../components/ui/Button';
+import { Input, SearchField } from '../../components/ui/Input';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { Modal } from '../../components/ui/Modal';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { 
+  PlusIcon, EditIcon, TrashIcon, KeyIcon, RefreshIcon, 
+  UserIcon, LockIcon, ShieldIcon, CheckCircleIcon, XCircleIcon 
+} from '../../components/ui/icons';
 
 const ROLE_TABS = ['JUDGE', 'ADMIN'];
-
 const emptyForm = { name: '', email: '', phone: '', role: 'JUDGE', password: '' };
 
 export default function AdminUsers() {
@@ -11,22 +23,32 @@ export default function AdminUsers() {
   const [tab, setTab] = useState('JUDGE');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null); // null | 'add' | 'edit' | 'password' | 'delete'
+  const [modal, setModal] = useState(null); // null | 'add' | 'edit' | 'password' | 'reset' | 'delete'
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [pwForm, setPwForm] = useState({ password: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const { showLoader, hideLoader } = useLoader();
+  const { success: toastSuccess, error: toastError } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
-    if (users.length === 0) showLoader('Loading users...');
-    try { const { data } = await api.get('/admin/users'); setUsers(data); }
-    finally { setLoading(false); hideLoader(); }
+    if (users.length === 0) showLoader('Loading directory accounts...');
+    try {
+      const { data } = await api.get('/admin/users');
+      setUsers(data);
+    } catch (err) {
+      toastError('Failed to load users');
+    } finally {
+      setLoading(false);
+      hideLoader();
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filtered = users.filter(u => {
     const matchesRole = u.role === tab;
@@ -38,330 +60,534 @@ export default function AdminUsers() {
     return matchesRole && matchesSearch;
   });
 
-  const openAdd = () => { setForm({ ...emptyForm, role: tab }); setError(''); setModal('add'); };
-  const openEdit = (u) => { setSelected(u); setForm({ name: u.name, email: u.email, phone: u.phone || '', role: u.role, password: '' }); setError(''); setModal('edit'); };
-  const openPassword = (u) => { setSelected(u); setPwForm({ password: '' }); setError(''); setModal('password'); };
-  const openReset = (u) => { setSelected(u); setError(''); setModal('reset'); };
-  const openDelete = (u) => { setSelected(u); setError(''); setModal('delete'); };
-  const closeModal = () => { setModal(null); setSelected(null); setError(''); };
+  const openAdd = () => {
+    setForm({ ...emptyForm, role: tab });
+    setError('');
+    setModal('add');
+  };
 
-  const handleAdd = async () => {
-    setSaving(true); setError('');
+  const openEdit = (u) => {
+    setSelected(u);
+    setForm({ name: u.name, email: u.email, phone: u.phone || '', role: u.role, password: '' });
+    setError('');
+    setModal('edit');
+  };
+
+  const openPassword = (u) => {
+    setSelected(u);
+    setPwForm({ password: '' });
+    setError('');
+    setModal('password');
+  };
+
+  const openReset = (u) => {
+    setSelected(u);
+    setError('');
+    setModal('reset');
+  };
+
+  const openDelete = (u) => {
+    setSelected(u);
+    setError('');
+    setModal('delete');
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setSelected(null);
+    setError('');
+  };
+
+  const handleAdd = async (e) => {
+    e?.preventDefault();
+    setSaving(true);
+    setError('');
     try {
       await api.post('/admin/users', form);
-      await load(); closeModal();
-    } catch (e) { setError(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
+      toastSuccess(`Created account for ${form.name}`);
+      await load();
+      closeModal();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to create user');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = async () => {
-    setSaving(true); setError('');
+  const handleEdit = async (e) => {
+    e?.preventDefault();
+    setSaving(true);
+    setError('');
     try {
       await api.put(`/admin/users/${selected.id}`, form);
-      await load(); closeModal();
-    } catch (e) { setError(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
+      toastSuccess(`Updated profile for ${form.name}`);
+      await load();
+      closeModal();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handlePassword = async () => {
-    setSaving(true); setError('');
+  const handlePassword = async (e) => {
+    e?.preventDefault();
+    setSaving(true);
+    setError('');
     try {
       await api.put(`/admin/users/${selected.id}/password`, pwForm);
-      await load(); closeModal();
-    } catch (e) { setError(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
+      toastSuccess(`Password updated for ${selected.name}`);
+      await load();
+      closeModal();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to update password');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleResetPassword = async () => {
-    setSaving(true); setError('');
+    setSaving(true);
+    setError('');
     try {
       await api.post(`/admin/users/${selected.id}/reset-password`);
-      await load(); closeModal();
-    } catch (e) { setError(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
+      toastSuccess(`Password reset to default for ${selected.name}`);
+      await load();
+      closeModal();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to reset password');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async () => {
-    setSaving(true); setError('');
+    setSaving(true);
+    setError('');
     try {
       await api.delete(`/admin/users/${selected.id}`);
-      await load(); closeModal();
-    } catch (e) { setError(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
+      toastSuccess(`Account ${selected.name} removed`);
+      await load();
+      closeModal();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to delete user');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleReveal = (id) => setRevealed(r => ({ ...r, [id]: !r[id] }));
+  const judgeCount = users.filter(u => u.role === 'JUDGE').length;
+  const adminCount = users.filter(u => u.role === 'ADMIN').length;
 
   return (
-    <div>
-      <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
-        <h1>User Management</h1>
-        <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <div style={{position:'relative', width:250}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input className="form-input" type="text" placeholder="Search name, email, phone..."
-              value={search} onChange={e => setSearch(e.target.value)}
-              style={{width:'100%',margin:0, paddingLeft:32}} />
+    <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <PageHeader
+        title="Identity & Access Control"
+        subtitle="Manage organizer administrators, evaluators, credentials, and permissions"
+        actions={
+          <Button variant="primary" icon={PlusIcon} onClick={openAdd}>
+            Add User
+          </Button>
+        }
+      />
+
+      <Card style={{ padding: 0, overflow: 'hidden' }}>
+        {/* Controls Header */}
+        <div style={{
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border-hairline)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 16
+        }}>
+          <div style={{ width: 280 }}>
+            <SearchField
+              placeholder="Search name, email, phone..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
-          <button className="btn btn-primary" onClick={openAdd}>+ Add User</button>
+
+          <SegmentedControl
+            options={[
+              { value: 'JUDGE', label: 'Judges', badge: judgeCount },
+              { value: 'ADMIN', label: 'Administrators', badge: adminCount }
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        {ROLE_TABS.map(role => (
-          <button key={role} onClick={() => setTab(role)}
-            className={`btn ${tab === role ? 'btn-primary' : 'btn-ghost'}`}>
-            {role === 'JUDGE' ? '👥 Judges' : '🔑 Admins'}
-            <span style={{ marginLeft: 6, background: 'rgba(255,255,255,0.15)', borderRadius: 9999, padding: '0 8px', fontSize: 11 }}>
-              {users.filter(u => u.role === role).length}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="skeleton" style={{ height: 200 }} />
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Security</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
-                  {search ? `No ${tab.toLowerCase()}s match "${search}"` : `No ${tab.toLowerCase()}s yet`}
-                </td></tr>
-              )}
-              {filtered.map(u => (
-                <tr key={u.id}>
-                  <td style={{ fontWeight: 600 }}>{u.name}</td>
-                  <td className="text-muted">{u.email}</td>
-                  <td className="text-muted" style={{ fontSize: 12 }}>{u.phone || '—'}</td>
-                  <td>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      🔒 Encrypted
-                    </span>
-                  </td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>✏️ Edit</button>
-                      {u.role !== 'JUDGE' ? (
-                        <button className="btn btn-ghost btn-sm" onClick={() => openPassword(u)}>🔑 Pwd</button>
-                      ) : (
-                        <button className="btn btn-ghost btn-sm" onClick={() => openReset(u)} title="Reset to judge123">🔄 Reset</button>
-                      )}
-                      <button className="btn btn-danger btn-sm" onClick={() => openDelete(u)}>🗑</button>
-                    </div>
-                  </td>
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={UserIcon}
+            title={search ? `No ${tab.toLowerCase()}s match "${search}"` : `No ${tab.toLowerCase()}s registered`}
+            description={search ? 'Try adjusting your search criteria.' : `Add your first ${tab.toLowerCase()} user to grant system access.`}
+            actionLabel={!search ? `Add ${tab === 'JUDGE' ? 'Judge' : 'Admin'}` : undefined}
+            onAction={!search ? openAdd : undefined}
+          />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-hairline)' }}>
+                  <th style={{ padding: '12px 24px', fontWeight: 600, color: 'var(--text-secondary)' }}>User</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Contact Email</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Phone</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Security</th>
+                  <th style={{ padding: '12px 24px', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {filtered.map(u => (
+                  <tr
+                    key={u.id}
+                    style={{
+                      borderBottom: '1px solid var(--border-hairline)',
+                      transition: 'background var(--transition-fast)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '16px 24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          background: u.role === 'ADMIN' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                          border: `1px solid ${u.role === 'ADMIN' ? 'var(--accent)' : 'var(--border-hairline)'}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: u.role === 'ADMIN' ? 'var(--accent)' : 'var(--text-primary)'
+                        }}>
+                          {u.name ? u.name.slice(0, 2).toUpperCase() : 'US'}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <Badge variant={u.role === 'ADMIN' ? 'accent' : 'neutral'}>
+                              {u.role}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
 
-      {/* ── Add Modal ─────────────────────────────────────── */}
-      {modal === 'add' && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:480,width:'100%'}}>
-            {/* Header */}
-            <div style={{marginBottom:20}}>
-              <div style={{height:3,background:'var(--gradient-primary)',borderRadius:2,marginBottom:16}}/>
-              <div style={{display:'flex',alignItems:'center',gap:12}}>
-                <div style={{width:40,height:40,borderRadius:10,background:'var(--gradient-primary)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
-                  {form.role === 'JUDGE' ? '👥' : '🔑'}
-                </div>
-                <div>
-                  <h2 style={{margin:0,fontSize:18}}>Add {form.role === 'JUDGE' ? 'Judge' : 'Admin'}</h2>
-                  <p style={{margin:0,fontSize:12,color:'var(--text-muted)'}}>Fill in the details below</p>
-                </div>
-              </div>
+                    <td style={{ padding: '16px 20px', color: 'var(--text-secondary)' }}>
+                      {u.email}
+                    </td>
+
+                    <td style={{ padding: '16px 20px', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {u.phone || '—'}
+                    </td>
+
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 12,
+                        color: 'var(--text-secondary)',
+                        background: 'var(--bg-elevated)',
+                        padding: '4px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-hairline)'
+                      }}>
+                        <LockIcon size={12} />
+                        <span>Bcrypt Hash</span>
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <IconButton
+                          icon={EditIcon}
+                          label="Edit Profile"
+                          onClick={() => openEdit(u)}
+                        />
+                        {u.role !== 'JUDGE' ? (
+                          <IconButton
+                            icon={KeyIcon}
+                            label="Change Password"
+                            onClick={() => openPassword(u)}
+                          />
+                        ) : (
+                          <IconButton
+                            icon={RefreshIcon}
+                            label="Reset Password"
+                            onClick={() => openReset(u)}
+                          />
+                        )}
+                        <IconButton
+                          icon={TrashIcon}
+                          label="Delete User"
+                          variant="danger"
+                          onClick={() => openDelete(u)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Add User Modal */}
+      <Modal
+        isOpen={modal === 'add'}
+        onClose={closeModal}
+        title={`Add New ${form.role === 'JUDGE' ? 'Judge' : 'Administrator'}`}
+        subtitle="Provision credentials for system evaluation or event operations"
+      >
+        <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ marginBottom: 4 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8, color: 'var(--text-secondary)' }}>
+              Account Role
+            </label>
+            <SegmentedControl
+              options={[
+                { value: 'JUDGE', label: 'Judge / Evaluator' },
+                { value: 'ADMIN', label: 'Administrator' }
+              ]}
+              value={form.role}
+              onChange={val => setForm(f => ({ ...f, role: val }))}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Input
+              label="Full Name"
+              required
+              placeholder="e.g. Alex Morgan"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            />
+            <Input
+              label="Phone Number"
+              placeholder="+1-555-0100"
+              value={form.phone}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+            />
+          </div>
+
+          <Input
+            label="Email Address"
+            type="email"
+            required
+            placeholder="alex@domain.com"
+            value={form.email}
+            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+          />
+
+          <Input
+            label="Initial Password"
+            type="text"
+            required
+            placeholder="Set an initial password"
+            value={form.password}
+            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+            caption="Must be at least 4 characters"
+          />
+
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--danger-subtle)',
+              border: '1px solid rgba(255, 69, 58, 0.25)',
+              color: 'var(--danger)',
+              fontSize: 13
+            }}>
+              {error}
             </div>
+          )}
 
-            {/* Role toggle */}
-            <div style={{display:'flex',background:'var(--bg-input)',borderRadius:10,padding:4,marginBottom:20,gap:4}}>
-              {ROLE_TABS.map(r => (
-                <button key={r} onClick={() => setForm(f => ({ ...f, role: r }))}
-                  style={{flex:1,padding:'8px 0',borderRadius:7,border:'none',cursor:'pointer',fontWeight:600,fontSize:13,
-                    transition:'all 0.2s',
-                    background: form.role === r ? 'var(--accent)' : 'transparent',
-                    color: form.role === r ? '#fff' : 'var(--text-muted)'}}>
-                  {r === 'JUDGE' ? '👥 Judge' : '🔑 Admin'}
-                </button>
-              ))}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+            <Button variant="ghost" type="button" onClick={closeModal}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={saving}>
+              {saving ? 'Creating...' : `Create ${form.role === 'JUDGE' ? 'Judge' : 'Admin'}`}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit User Modal */}
+      <Modal
+        isOpen={modal === 'edit' && !!selected}
+        onClose={closeModal}
+        title="Edit Account"
+        subtitle={`Updating profile for ${selected?.name}`}
+      >
+        <form onSubmit={handleEdit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Input
+              label="Full Name"
+              required
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            />
+            <Input
+              label="Phone Number"
+              value={form.phone}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+            />
+          </div>
+
+          <Input
+            label="Email Address"
+            type="email"
+            required
+            value={form.email}
+            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+          />
+
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--danger-subtle)',
+              border: '1px solid rgba(255, 69, 58, 0.25)',
+              color: 'var(--danger)',
+              fontSize: 13
+            }}>
+              {error}
             </div>
+          )}
 
-            {/* Fields — name + phone in a row */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <div className="form-group" style={{margin:0}}>
-                <label className="form-label">Full Name <span style={{color:'var(--accent)'}}>*</span></label>
-                <input className="form-input" type="text" placeholder="e.g. Dr. Sarah Chen"
-                  value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div className="form-group" style={{margin:0}}>
-                <label className="form-label">Phone <span style={{color:'var(--text-muted)',fontWeight:400}}>(optional)</span></label>
-                <input className="form-input" type="text" placeholder="+1-555-0101"
-                  value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+            <Button variant="ghost" type="button" onClick={closeModal}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        isOpen={modal === 'password' && !!selected}
+        onClose={closeModal}
+        title="Update Password"
+        subtitle={`Set new administrator credentials for ${selected?.name}`}
+      >
+        <form onSubmit={handlePassword} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Input
+            label="New Password"
+            type="text"
+            required
+            placeholder="Min 4 characters"
+            value={pwForm.password}
+            onChange={e => setPwForm({ password: e.target.value })}
+          />
+
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--danger-subtle)',
+              border: '1px solid rgba(255, 69, 58, 0.25)',
+              color: 'var(--danger)',
+              fontSize: 13
+            }}>
+              {error}
             </div>
+          )}
 
-            <div className="form-group">
-              <label className="form-label">Email <span style={{color:'var(--accent)'}}>*</span></label>
-              <input className="form-input" type="text" placeholder="email@example.com"
-                value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+            <Button variant="ghost" type="button" onClick={closeModal}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={saving}>
+              {saving ? 'Updating...' : 'Update Password'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal
+        isOpen={modal === 'reset' && !!selected}
+        onClose={closeModal}
+        title="Reset Judge Password?"
+        subtitle="Confirm default credentials restoration"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Reset password for <strong style={{ color: 'var(--text-primary)' }}>{selected?.name}</strong> to standard initial credentials:
+          </p>
+          <div style={{
+            background: 'var(--bg-elevated)',
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-hairline)',
+            fontFamily: 'monospace',
+            fontSize: 14,
+            fontWeight: 700,
+            color: 'var(--accent)',
+            textAlign: 'center'
+          }}>
+            judge123
+          </div>
+
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--danger-subtle)',
+              color: 'var(--danger)',
+              fontSize: 13
+            }}>
+              {error}
             </div>
+          )}
 
-            <div className="form-group">
-              <label className="form-label">Password <span style={{color:'var(--accent)'}}>*</span></label>
-              <input className="form-input" type="text" placeholder="Set a password (will be visible to admins)"
-                value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-            </div>
-
-            {error && <div className="alert alert-error" style={{marginBottom:12}}>{error}</div>}
-
-            <div style={{display:'flex',gap:8,marginTop:20,paddingTop:16,borderTop:'1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={closeModal} style={{flex:'0 0 auto'}}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleAdd} disabled={saving} style={{flex:1}}>
-                {saving ? 'Adding...' : `✓ Add ${form.role === 'JUDGE' ? 'Judge' : 'Admin'}`}
-              </button>
-            </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button variant="ghost" onClick={closeModal}>Cancel</Button>
+            <Button variant="primary" onClick={handleResetPassword} disabled={saving}>
+              {saving ? 'Resetting...' : 'Confirm Reset'}
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      {/* ── Edit Modal ─────────────────────────────────────── */}
-      {modal === 'edit' && selected && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:460,width:'100%'}}>
-            <div style={{height:3,background:'var(--gradient-primary)',borderRadius:2,marginBottom:16}}/>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-              <div style={{width:40,height:40,borderRadius:'50%',background:'var(--gradient-primary)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:16,color:'#fff'}}>
-                {selected.name[0].toUpperCase()}
-              </div>
-              <div>
-                <h2 style={{margin:0,fontSize:18}}>Edit Profile</h2>
-                <p style={{margin:0,fontSize:12,color:'var(--text-muted)'}}>{selected.role} · {selected.email}</p>
-              </div>
-            </div>
+      {/* Delete User Modal */}
+      <Modal
+        isOpen={modal === 'delete' && !!selected}
+        onClose={closeModal}
+        title="Delete User Account?"
+        subtitle="This action permanently revokes login access."
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Are you sure you want to delete <strong style={{ color: 'var(--text-primary)' }}>{selected?.name}</strong> ({selected?.email})? All active sessions and role assignments will be removed.
+          </p>
 
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <div className="form-group" style={{margin:0}}>
-                <label className="form-label">Full Name <span style={{color:'var(--accent)'}}>*</span></label>
-                <input className="form-input" type="text" value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div className="form-group" style={{margin:0}}>
-                <label className="form-label">Phone</label>
-                <input className="form-input" type="text" placeholder="Optional" value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--danger-subtle)',
+              color: 'var(--danger)',
+              fontSize: 13
+            }}>
+              {error}
             </div>
+          )}
 
-            <div className="form-group">
-              <label className="form-label">Email <span style={{color:'var(--accent)'}}>*</span></label>
-              <input className="form-input" type="text" value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
-
-            {error && <div className="alert alert-error" style={{marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,marginTop:20,paddingTop:16,borderTop:'1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleEdit} disabled={saving} style={{flex:1}}>
-                {saving ? 'Saving...' : '✓ Save Changes'}
-              </button>
-            </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button variant="ghost" onClick={closeModal}>Cancel</Button>
+            <Button variant="danger" onClick={handleDelete} disabled={saving}>
+              {saving ? 'Deleting...' : 'Delete Account'}
+            </Button>
           </div>
         </div>
-      )}
-
-      {/* ── Change Password Modal ─────────────────────────── */}
-      {modal === 'password' && selected && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:420,width:'100%'}}>
-            <div style={{height:3,background:'linear-gradient(90deg,#f59e0b,#ef4444)',borderRadius:2,marginBottom:16}}/>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-              <div style={{width:40,height:40,borderRadius:'50%',background:'rgba(245,158,11,0.15)',border:'1px solid rgba(245,158,11,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>
-                🔑
-              </div>
-              <div>
-                <h2 style={{margin:0,fontSize:18}}>Change Password</h2>
-                <p style={{margin:0,fontSize:12,color:'var(--text-muted)'}}>{selected.name} · {selected.email}</p>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">New Password <span style={{color:'var(--accent)'}}>*</span></label>
-              <input className="form-input" type="text" placeholder="Min 4 characters — stored in plain text for admin view"
-                value={pwForm.password} onChange={e => setPwForm({ password: e.target.value })} />
-            </div>
-
-            {error && <div className="alert alert-error" style={{marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,marginTop:20,paddingTop:16,borderTop:'1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-primary" onClick={handlePassword} disabled={saving} style={{flex:1}}>
-                {saving ? 'Updating...' : '🔑 Update Password'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Reset Password Modal ────────────────────────── */}
-      {modal === 'reset' && selected && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:400,width:'100%'}}>
-            <div style={{height:3,background:'linear-gradient(90deg,#3b82f6,#8b5cf6)',borderRadius:2,marginBottom:16}}/>
-            <div style={{textAlign:'center',padding:'8px 0 20px'}}>
-              <div style={{fontSize:40,marginBottom:12}}>🔄</div>
-              <h2 style={{margin:'0 0 8px',fontSize:18}}>Reset Password?</h2>
-              <p style={{margin:0,color:'var(--text-muted)',fontSize:13,lineHeight:1.6}}>
-                Reset password for <strong style={{color:'var(--text-primary)'}}>{selected.name}</strong> to the default:
-                <br/><code style={{background:'var(--bg-input)',padding:'2px 6px',borderRadius:4,fontSize:14,color:'var(--accent)',fontWeight:700,display:'inline-block',marginTop:8}}>judge123</code>
-              </p>
-            </div>
-            {error && <div className="alert alert-error" style={{marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,paddingTop:16,borderTop:'1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={closeModal} style={{flex:1}}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleResetPassword} disabled={saving} style={{flex:1}}>
-                {saving ? 'Resetting...' : '🔄 Confirm Reset'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete Confirm Modal ──────────────────────────── */}
-      {modal === 'delete' && selected && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:400,width:'100%'}}>
-            <div style={{height:3,background:'linear-gradient(90deg,#ef4444,#dc2626)',borderRadius:2,marginBottom:16}}/>
-            <div style={{textAlign:'center',padding:'8px 0 20px'}}>
-              <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
-              <h2 style={{margin:'0 0 8px',fontSize:18}}>Delete User?</h2>
-              <p style={{margin:0,color:'var(--text-muted)',fontSize:13,lineHeight:1.6}}>
-                You're about to delete <strong style={{color:'var(--text-primary)'}}>{selected.name}</strong>
-                <br/><span style={{fontSize:12}}>{selected.email}</span>
-                <br/><br/>This action <strong>cannot be undone</strong>.
-              </p>
-            </div>
-            {error && <div className="alert alert-error" style={{marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,paddingTop:16,borderTop:'1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={closeModal} style={{flex:1}}>Cancel</button>
-              <button className="btn btn-danger" onClick={handleDelete} disabled={saving} style={{flex:1}}>
-                {saving ? 'Deleting...' : '🗑 Delete User'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

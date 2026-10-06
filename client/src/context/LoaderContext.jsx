@@ -1,11 +1,11 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const LoaderContext = createContext(null);
 
 export function LoaderProvider({ children }) {
   const [state, setState] = useState({ visible: false, message: '' });
 
-  const showLoader = useCallback((message = 'Processing...') => {
+  const showLoader = useCallback((message = 'Loading...') => {
     setState({ visible: true, message });
   }, []);
 
@@ -17,11 +17,39 @@ export function LoaderProvider({ children }) {
     <LoaderContext.Provider value={{ showLoader, hideLoader }}>
       {children}
       {state.visible && (
-        <div className="global-loader-overlay">
-          <div className="global-loader-box">
-            <div className="global-loader-spinner" />
-            <div className="global-loader-message">{state.message}</div>
-          </div>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: 18,
+            right: 24,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 16px',
+            background: 'var(--material-glass)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            border: '1px solid var(--border-medium)',
+            borderRadius: 'var(--radius-pill)',
+            boxShadow: 'var(--shadow-md)',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: 500,
+            color: 'var(--text-primary)',
+            pointerEvents: 'none'
+          }}
+        >
+          <span
+            className="apple-btn-spinner"
+            style={{
+              width: 14,
+              height: 14,
+              borderColor: 'rgba(255, 255, 255, 0.2)',
+              borderTopColor: 'var(--accent)'
+            }}
+          />
+          <span>{state.message}</span>
         </div>
       )}
     </LoaderContext.Provider>

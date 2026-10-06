@@ -1,49 +1,71 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
-import { useLoader } from '../../context/LoaderContext';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import { SearchField, Input } from '../../components/ui/Input';
+import Modal from '../../components/ui/Modal';
+import EmptyState from '../../components/ui/EmptyState';
+import {
+  Scale,
+  Plus,
+  Upload,
+  Search,
+  Eye,
+  Edit3,
+  Trash2,
+  Clock,
+  CheckCircle2,
+  AlertTriangle
+} from '../../components/ui/icons';
 
 export default function AdminJudges() {
   const { success, error: toastError } = useToast();
-  const [events, setEvents] = useState([]);
+  const { activeEvent } = useActiveEvent();
+  const navigate = useNavigate();
+
   const [judges, setJudges] = useState([]);
   const [eventId, setEventId] = useState('');
   const [search, setSearch] = useState('');
   const [activityFilter, setActivityFilter] = useState('ALL');
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importCsv, setImportCsv] = useState('judge_name,judge_email,judge_phone\n');
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [editingJudge, setEditingJudge] = useState(null);
-  const [deletingJudge, setDeletingJudge] = useState(null); // null | id
+  const [deletingJudge, setDeletingJudge] = useState(null);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '' });
-  const { activeEvent } = useActiveEvent();
-  const { showLoader, hideLoader } = useLoader();
 
   const fetchJudges = () => {
     if (eventId) {
-      showLoader('Loading judges...');
-      api.get(`/events/${eventId}/judges`)
-        .then(r => setJudges(r.data))
-        .catch(() => {})
-        .finally(() => hideLoader());
+      api.get(`/events/${eventId}/judges`).then((r) => setJudges(r.data)).catch(() => {});
     }
   };
 
-  useEffect(() => { 
-    showLoader('Loading events...');
-    api.get('/events').then(r => { 
-      setEvents(r.data); 
-      if (activeEvent) {
-        setEventId(activeEvent.id);
-      }
-    }).finally(() => hideLoader()); 
+  useEffect(() => {
+    if (activeEvent) {
+      setEventId(activeEvent.id);
+    } else {
+      api.get('/events').then((r) => {
+        if (r.data.length > 0) setEventId(r.data[0].id);
+      });
+    }
   }, [activeEvent]);
 
-  useEffect(() => { fetchJudges(); }, [eventId]);
+  useEffect(() => {
+    fetchJudges();
+  }, [eventId]);
 
-  const filteredJudges = judges.filter(j => {
+  const filteredJudges = judges.filter((j) => {
     if (activityFilter === 'ACTIVE' && j.inProgressSets === 0) return false;
-    if (activityFilter === 'IDLE'   && (j.inProgressSets > 0 || j.completedSets > 0)) return false;
-    if (activityFilter === 'DONE'   && j.inProgressSets > 0) return false;
+    if (activityFilter === 'IDLE' && (j.inProgressSets > 0 || j.completedSets > 0)) return false;
+    if (activityFilter === 'DONE' && j.inProgressSets > 0) return false;
+
     const q = search.toLowerCase();
     if (!q) return true;
     return (
@@ -64,20 +86,15 @@ export default function AdminJudges() {
     setShowModal(true);
   };
 
-  const fmtTime = (s) => {
-    if (!s) return '—';
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${sec}s`;
-  };
-
-  const handleSave = async (e) => {
+  const handleSaveJudge = async (e) => {
     e.preventDefault();
     try {
       if (editingJudge) {
         await api.put(`/events/${eventId}/judges/${editingJudge.id}`, formData);
+        success('Judge profile updated');
       } else {
         await api.post(`/events/${eventId}/judges`, formData);
+        success('Judge registered successfully');
       }
       setShowModal(false);
       fetchJudges();
@@ -86,187 +103,289 @@ export default function AdminJudges() {
     }
   };
 
-  const confirmDelete = async () => {
-    if (!deletingJudge) return;
+  const handleDeleteJudge = async (id) => {
     try {
-      await api.delete(`/events/${eventId}/judges/${deletingJudge}`);
-      success('Judge and associated data removed');
+      await api.delete(`/events/${eventId}/judges/${id}`);
+      success('Judge removed');
       setDeletingJudge(null);
       fetchJudges();
     } catch (err) {
-      toastError('Failed to delete judge');
+      toastError(err.response?.data?.error || 'Failed to remove judge');
     }
   };
 
-  const handleDelete = (id) => {
-    setDeletingJudge(id);
+  const handleImportSubmit = async () => {
+    setImporting(true);
+    try {
+      const res = await api.post(`/events/${eventId}/judges/import`, { csvData: importCsv });
+      setImportResult(res.data);
+      success(`Imported ${res.data.count || 0} judges successfully`);
+      fetchJudges();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Judge import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const fmtTime = (s) => {
+    if (!s) return '—';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
   };
 
   return (
     <div>
-      {!activeEvent && (
-        <>
-          <div className="page-header">
-            <h1>Judges</h1>
-          </div>
-          <div style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            background: 'var(--bg-card)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            marginBottom: '20px'
-          }}>
-            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
-            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to manage judges.</p>
-          </div>
-        </>
-      )}
-
-      {!activeEvent ? null : (
-        <>
-          <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
-            <h1>Judges</h1>
-            <div className="flex gap-2" style={{alignItems:'center'}}>
-              <div style={{position:'relative', width:250}}>
-                <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Search name, email, phone..." 
-                  className="form-input" 
-                  style={{width:'100%', paddingLeft:32}}
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-              </div>
-              <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Judge</button>
-              <span className="badge badge-info">{filteredJudges.length} judges</span>
-            </div>
-          </div>
-
-          {/* Activity filter pills */}
-          <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:16}}>
-        {[
-          { key:'ALL',    label:'All' },
-          { key:'ACTIVE', label:'⚡ Active' },
-          { key:'IDLE',   label:'⏸️ Idle' },
-          { key:'DONE',   label:'✅ Done' },
-        ].map(f => {
-          const count = f.key === 'ALL' ? judges.length
-            : f.key === 'ACTIVE' ? judges.filter(j => j.inProgressSets > 0).length
-            : f.key === 'IDLE'   ? judges.filter(j => j.inProgressSets === 0 && j.completedSets === 0).length
-            : judges.filter(j => j.inProgressSets === 0 && j.completedSets > 0).length;
-          return (
-            <button
-              key={f.key}
-              className={`btn btn-sm ${activityFilter === f.key ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setActivityFilter(f.key)}
+      <PageHeader
+        title="Judges Directory"
+        subtitle={`Evaluation staff & workload management for ${activeEvent?.name || 'event'}`}
+        actions={
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={Upload}
+              onClick={() => { setImportResult(null); setShowImportModal(true); }}
             >
-              {f.label} <span style={{marginLeft:4, opacity:0.7, fontSize:10}}>({count})</span>
-            </button>
-          );
-        })}
+              Import CSV
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              icon={Plus}
+              onClick={() => handleOpenModal()}
+            >
+              Add Judge
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Filter and Search Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+        <SearchField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, email, phone..."
+        />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Activity State:</span>
+          <select
+            value={activityFilter}
+            onChange={(e) => setActivityFilter(e.target.value)}
+            className="apple-select"
+            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
+          >
+            <option value="ALL">All Judges ({judges.length})</option>
+            <option value="ACTIVE">Currently Judging</option>
+            <option value="DONE">Completed</option>
+            <option value="IDLE">Not Started</option>
+          </select>
+        </div>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Sets</th><th>Completed</th><th>Status</th><th>Total Time</th><th>Actions</th></tr></thead>
-          <tbody>
-            {filteredJudges.map(j => (
-              <tr key={j.id}>
-                <td>
-                  <a 
-                    href={`/admin/view-judge/${j.id}`}
-                    style={{color:'var(--accent)', textDecoration:'none', fontWeight:700}}
-                    onClick={(e) => { e.preventDefault(); window.location.href = `/admin/view-judge/${j.id}`; }}
-                  >
-                    {j.name}
-                  </a>
-                </td>
-                <td className="text-muted" style={{fontSize:12}}>{j.email}</td>
-                <td className="text-muted" style={{fontSize:12}}>{j.phone || '—'}</td>
-                <td>{j.totalSets}</td>
-                <td>{j.completedSets}</td>
-                <td>
-                  {j.inProgressSets > 0
-                    ? <span className="badge badge-warning">⚡ Active</span>
-                    : j.completedSets > 0 && j.inProgressSets === 0
-                    ? <span className="badge badge-success">✅ Done</span>
-                    : <span className="badge badge-info">⏸️ Idle</span>}
-                </td>
-                <td style={{fontSize:12, color:'var(--text-muted)'}}>{fmtTime(j.totalTimeSeconds)}</td>
-                <td>
-                  <div className="flex gap-2">
-                    <button className="btn btn-ghost btn-sm" style={{color:'var(--accent)'}} onClick={() => handleOpenModal(j)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDelete(j.id)}>Delete</button>
-                    <button className="btn btn-ghost btn-sm" style={{color:'var(--accent)', opacity: 0.7}} onClick={() => window.location.href = `/admin/view-judge/${j.id}`}>View</button>
-                  </div>
-                </td>
+      {/* Judges Table */}
+      <div className="apple-table-container">
+        <div className="apple-table-scroll">
+          <table className="apple-table">
+            <thead>
+              <tr>
+                <th>Judge Name</th>
+                <th>Contact</th>
+                <th>Workload Status</th>
+                <th style={{ textAlign: 'center' }}>Completed Sets</th>
+                <th style={{ textAlign: 'right' }}>Time Spent</th>
+                <th style={{ width: 150, textAlign: 'right' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredJudges.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ padding: '40px 0' }}>
+                    <EmptyState
+                      icon={Scale}
+                      title="No Judges Found"
+                      description={search ? "No judge matches your query." : "No judges registered for this event yet."}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                filteredJudges.map((j) => (
+                  <tr key={j.id}>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{j.name}</div>
+                      <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {j.role || 'JUDGE'}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)' }}>{j.email}</div>
+                      {j.phone && (
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>{j.phone}</div>
+                      )}
+                    </td>
+                    <td>
+                      {j.inProgressSets > 0 ? (
+                        <Badge variant="warning" dot pulse>Evaluating Set</Badge>
+                      ) : j.completedSets > 0 ? (
+                        <Badge variant="success" icon={CheckCircle2}>Available</Badge>
+                      ) : (
+                        <Badge variant="default">Idle</Badge>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className="tabular-nums apple-badge apple-badge-default apple-badge-sm">
+                        {j.completedSets || 0} sets
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                        {fmtTime(j.totalTimeSeconds)}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-secondary apple-btn-sm"
+                          onClick={() => navigate(`/admin/view-judge/${j.id}`)}
+                          title="Simulate / View as Judge"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          onClick={() => handleOpenModal(j)}
+                          title="Edit Profile"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          onClick={() => setDeletingJudge(j)}
+                          title="Remove Judge"
+                          style={{ color: 'var(--accent-danger)' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
-            <h2>{editingJudge ? 'Edit Judge' : 'Add New Judge'}</h2>
-            <form onSubmit={handleSave} className="grid gap-4 mt-4">
-              <div className="form-group">
-                <label className="form-label">Name</label>
-                <input type="text" className="form-input" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Email</label>
-                <input type="email" className="form-input" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Phone</label>
-                <input type="text" className="form-input" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} required />
-              </div>
-              {!editingJudge && (
-                <div className="form-group">
-                  <label className="form-label">Initial Password (Optional)</label>
-                  <input type="text" className="form-input" placeholder="Random if empty" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-                </div>
-              )}
-              <div className="flex gap-2 mt-2">
-                <button type="submit" className="btn btn-primary flex-1">Save Judge</button>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Add / Edit Judge Modal */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingJudge ? 'Edit Judge Profile' : 'Add New Judge'}
+        subtitle="Manage credentials and assignment capacity"
+        maxWidth="500px"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleSaveJudge}>Save Judge</Button>
+          </>
+        }
+      >
+        <form onSubmit={handleSaveJudge}>
+          <Input
+            label="Full Name"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="Dr. Sarah Chen"
+            required
+            autoFocus
+          />
+          <Input
+            label="Email Address"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="judge@example.com"
+            required
+          />
+          <Input
+            label="Phone Number"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            placeholder="+1 555-0100"
+          />
+          {!editingJudge && (
+            <Input
+              label="Temporary Password"
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="••••••••"
+              required
+            />
+          )}
+        </form>
+      </Modal>
 
-      {/* ── Delete Confirm Modal ──────────────────────────── */}
-      {deletingJudge && (
-        <div className="modal-overlay" onClick={() => setDeletingJudge(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
-            <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
-            <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
-              <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
-              <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Judge?</h2>
-              <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
-                You're about to delete <strong style={{color: 'var(--text-primary)'}}>{judges.find(j => j.id === deletingJudge)?.name}</strong>.
-                <br/><br/>
-                All associated <strong>assignments</strong>, <strong>scores</strong>, and <strong>feedback</strong> in this event will be permanently removed.
-                <br/><br/>
-                This action <strong>cannot be undone</strong>.
-              </p>
-            </div>
-            <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={() => setDeletingJudge(null)} style={{flex: 1}}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDelete} style={{flex: 1}}>
-                🗑 Delete Judge
-              </button>
-            </div>
+      {/* CSV Import Modal */}
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Judges via CSV"
+        subtitle="Batch register evaluators and credentials"
+        maxWidth="580px"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowImportModal(false)}>Cancel</Button>
+            <Button variant="primary" icon={Upload} loading={importing} onClick={handleImportSubmit}>
+              Import Judges
+            </Button>
+          </>
+        }
+      >
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginBottom: 8 }}>
+            Paste comma-separated data: <code>judge_name,judge_email,judge_phone</code>
           </div>
+          <textarea
+            value={importCsv}
+            onChange={(e) => setImportCsv(e.target.value)}
+            rows={7}
+            className="apple-input"
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 12, resize: 'vertical' }}
+          />
         </div>
-      )}
-        </>
-      )}
+
+        {importResult && (
+          <div style={{ padding: '12px 14px', background: 'var(--accent-success-tint)', border: '1px solid var(--accent-success)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'var(--font-size-xs)' }}>
+            <strong>Success:</strong> {importResult.count} judges imported successfully.
+          </div>
+        )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deletingJudge}
+        onClose={() => setDeletingJudge(null)}
+        title="Remove Judge?"
+        subtitle="This action unassigns the judge from any pending evaluation sets."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeletingJudge(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => handleDeleteJudge(deletingJudge.id)}>Remove</Button>
+          </>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+          Are you sure you want to remove <strong>{deletingJudge?.name}</strong>?
+        </p>
+      </Modal>
     </div>
   );
 }

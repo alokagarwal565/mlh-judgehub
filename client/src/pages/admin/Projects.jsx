@@ -1,143 +1,152 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
-import { useLoader } from '../../context/LoaderContext';
 import Pagination, { usePagination } from '../../components/Pagination';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import { SearchField, Input, Select } from '../../components/ui/Input';
+import Modal from '../../components/ui/Modal';
+import EmptyState from '../../components/ui/EmptyState';
+import {
+  FolderGit2,
+  Plus,
+  Upload,
+  Download,
+  Search,
+  Trash2,
+  Edit3,
+  Eye,
+  ExternalLink,
+  CheckCircle2,
+  AlertTriangle
+} from '../../components/ui/icons';
 
 export default function AdminProjects() {
   const { success, error: toastError } = useToast();
   const socket = useSocket();
-  const [events, setEvents] = useState([]);
+  const { activeEvent } = useActiveEvent();
+
   const [projects, setProjects] = useState([]);
   const [eventId, setEventId] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const { activeEvent } = useActiveEvent();
-  const { showLoader, hideLoader } = useLoader();
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importCsv, setImportCsv] = useState('team_name,team_number,room_number,team_leader,team_phone\n');
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
-  const [deletingProject, setDeletingProject] = useState(null); // null | id
+  const [deletingProject, setDeletingProject] = useState(null);
+  const [selectedDetails, setSelectedDetails] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(25);
+
   const [formData, setFormData] = useState({
-    title: '', teamName: '', teamNumber: '', 
-    roomNumber: '', leaderName: '', phone: '', email: '', password: '', status: 'SUBMITTED'
+    title: '',
+    teamName: '',
+    teamNumber: '',
+    roomNumber: '',
+    leaderName: '',
+    phone: '',
+    email: '',
+    password: '',
+    status: 'SUBMITTED'
   });
 
   const fetchProjects = () => {
     if (eventId) {
-      showLoader('Loading projects...');
-      api.get(`/events/${eventId}/projects`)
-        .then(r => setProjects(r.data))
-        .finally(() => hideLoader());
+      api.get(`/events/${eventId}/projects`).then((r) => setProjects(r.data)).catch(() => {});
     }
   };
 
-  useEffect(() => { 
-    showLoader('Loading events...');
-    api.get('/events').then(r => { 
-      setEvents(r.data); 
-      // Only set eventId if activeEvent exists
-      if (activeEvent) {
-        setEventId(activeEvent.id);
-      }
-    }).finally(() => hideLoader()); 
+  useEffect(() => {
+    if (activeEvent) {
+      setEventId(activeEvent.id);
+    } else {
+      api.get('/events').then((r) => {
+        if (r.data.length > 0) setEventId(r.data[0].id);
+      });
+    }
   }, [activeEvent]);
 
-  useEffect(() => { fetchProjects(); }, [eventId]);
+  useEffect(() => {
+    fetchProjects();
+  }, [eventId]);
 
-  // Socket: Refresh projects when a flag is updated
   useEffect(() => {
     if (!socket || !eventId) return;
-    
     const handler = (data) => {
-      if (data.eventId === eventId) {
-        fetchProjects();
-      }
+      if (data.eventId === eventId) fetchProjects();
     };
-
     socket.on('flag:updated', handler);
     socket.on('flag:created', handler);
+    socket.on('score:submitted', handler);
     return () => {
       socket.off('flag:updated', handler);
       socket.off('flag:created', handler);
+      socket.off('score:submitted', handler);
     };
   }, [socket, eventId]);
 
-  const [selectedDetails, setSelectedDetails] = useState(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
+  const filtered = projects.filter((p) => {
+    const matchSearch =
+      p.title.toLowerCase().includes(search.toLowerCase()) ||
+      p.team?.name?.toLowerCase().includes(search.toLowerCase()) ||
+      p.teamNumber?.toString().includes(search) ||
+      p.roomNumber?.toString().includes(search) ||
+      p.leaderName?.toLowerCase().includes(search.toLowerCase());
 
-  const handleShowDetails = async (projectId) => {
-    if (!eventId) {
-      toastError('No event selected');
-      return;
-    }
-    setLoadingDetails(true);
-    setSelectedDetails(null); // Clear previous data
-    try {
-      const res = await api.get(`/events/${eventId}/projects/${projectId}/details`);
-      setSelectedDetails(res.data);
-    } catch (err) {
-      console.error('Details error:', err);
-      toastError('Failed to load project details');
-      setSelectedDetails(null);
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
-
-  const filteredProjects = projects.filter(p => {
-    if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
-    const q = search.toLowerCase();
-    if (!q) return true;
-    return (
-      p.title.toLowerCase().includes(q) ||
-      p.team?.name.toLowerCase().includes(q) ||
-      p.teamNumber?.toLowerCase().includes(q) ||
-      p.leaderName?.toLowerCase().includes(q) ||
-      p.team?.phone?.toLowerCase().includes(q) ||
-      p.roomNumber?.toLowerCase().includes(q)
-    );
+    const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
+    return matchSearch && matchStatus;
   });
 
-  // Reset page on filter/search change
-  useEffect(() => { setPage(1); }, [search, statusFilter]);
+  const { paged, totalPages, total } = usePagination(filtered, page, perPage);
 
-  const { paged: pagedProjects, totalPages, total } = usePagination(filteredProjects, page, perPage);
-
-  const handleOpenModal = (proj = null) => {
-    if (proj) {
-      setEditingProject(proj);
-      setFormData({
-        title: proj.title,
-        teamName: proj.team?.name || '',
-        teamNumber: proj.teamNumber || '',
-        roomNumber: proj.roomNumber || '',
-        leaderName: proj.leaderName || '',
-        phone: proj.team?.phone || '',
-        email: proj.team?.email || '',
-        password: '',
-        status: proj.status
-      });
-    } else {
-      setEditingProject(null);
-      setFormData({
-        title: '', teamName: '', teamNumber: '', 
-        roomNumber: '', leaderName: '', phone: '', email: '', password: '', status: 'SUBMITTED'
-      });
-    }
+  const openCreateModal = () => {
+    setEditingProject(null);
+    setFormData({
+      title: '',
+      teamName: '',
+      teamNumber: '',
+      roomNumber: '',
+      leaderName: '',
+      phone: '',
+      email: '',
+      password: '',
+      status: 'SUBMITTED'
+    });
     setShowModal(true);
   };
 
-  const handleSave = async (e) => {
+  const openEditModal = (p) => {
+    setEditingProject(p);
+    setFormData({
+      title: p.title,
+      teamName: p.team?.name || '',
+      teamNumber: p.teamNumber || '',
+      roomNumber: p.roomNumber || '',
+      leaderName: p.leaderName || '',
+      phone: p.team?.phone || '',
+      email: p.team?.email || '',
+      password: '',
+      status: p.status
+    });
+    setShowModal(true);
+  };
+
+  const handleSaveProject = async (e) => {
     e.preventDefault();
     try {
       if (editingProject) {
         await api.put(`/events/${eventId}/projects/${editingProject.id}`, formData);
+        success('Project updated successfully');
       } else {
         await api.post(`/events/${eventId}/projects`, formData);
+        success('Project created successfully');
       }
       setShowModal(false);
       fetchProjects();
@@ -146,327 +155,383 @@ export default function AdminProjects() {
     }
   };
 
-  const confirmDelete = async () => {
-    if (!deletingProject) return;
+  const handleDeleteProject = async (id) => {
     try {
-      await api.delete(`/events/${eventId}/projects/${deletingProject}`);
-      success('Project and associated team data removed');
+      await api.delete(`/events/${eventId}/projects/${id}`);
+      success('Project deleted');
       setDeletingProject(null);
       fetchProjects();
     } catch (err) {
-      toastError('Failed to delete project');
+      toastError(err.response?.data?.error || 'Failed to delete project');
     }
   };
 
-  const handleDelete = (id) => {
-    setDeletingProject(id);
+  const handleImportSubmit = async () => {
+    setImporting(true);
+    try {
+      const res = await api.post(`/events/${eventId}/projects/import`, { csvData: importCsv });
+      setImportResult(res.data);
+      success(`Imported ${res.data.count || 0} teams successfully`);
+      fetchProjects();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'CSV import failed');
+    } finally {
+      setImporting(false);
+    }
   };
 
-  const closeDetailsModal = () => {
-    setSelectedDetails(null);
-    setLoadingDetails(false);
+  const handleShowDetails = async (projectId) => {
+    try {
+      const res = await api.get(`/events/${eventId}/projects/${projectId}/details`);
+      setSelectedDetails(res.data);
+    } catch (err) {
+      toastError('Failed to fetch project details');
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    if (status === 'FLAGGED') return <Badge variant="danger" dot>Flagged</Badge>;
+    if (status === 'SCORED') return <Badge variant="success">Scored</Badge>;
+    if (status === 'UNDER_REVIEW') return <Badge variant="warning" dot pulse>In Judging</Badge>;
+    return <Badge variant="default">Submitted</Badge>;
   };
 
   return (
     <div>
-      {!activeEvent && (
-        <>
-          <div className="page-header">
-            <h1>Projects</h1>
+      <PageHeader
+        title="Projects & Teams"
+        subtitle={`Directory of all ${projects.length} submissions for ${activeEvent?.name || 'event'}`}
+        actions={
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={Upload}
+              onClick={() => { setImportResult(null); setShowImportModal(true); }}
+            >
+              Import CSV
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              icon={Plus}
+              onClick={openCreateModal}
+            >
+              New Project
+            </Button>
           </div>
-          <div style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            background: 'var(--bg-card)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            marginBottom: '20px'
-          }}>
-            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
-            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active to view and manage projects.</p>
-          </div>
-        </>
-      )}
-
-      {!activeEvent ? null : (
-        <>
-          <div className="page-header" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
-            <h1>Projects</h1>
-            <div className="flex gap-2">
-              <div style={{position:'relative', width:250}}>
-                <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Search teams, projects, leaders..." 
-                  className="form-input" 
-                  style={{width:'100%', paddingLeft:32}}
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-              </div>
-              <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Add Project</button>
-              <span className="badge badge-info">{filteredProjects.length} teams</span>
-            </div>
-          </div>
-
-          {/* Status filter pills */}
-          <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:16}}>
-        {[
-          { key:'ALL',              label:'All' },
-          { key:'SUBMITTED',        label:'Submitted' },
-          { key:'IN_JUDGING',       label:'Judging Started' },
-          { key:'JUDGING_COMPLETE', label:'Judging Completed' },
-          { key:'FLAGGED',          label:'🚩 Flagged' },
-          { key:'SCORED',           label:'Scored' },
-        ].map(f => (
-          <button
-            key={f.key}
-            className={`btn btn-sm ${statusFilter === f.key ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setStatusFilter(f.key)}
-          >
-            {f.label}
-            {f.key !== 'ALL' && (
-              <span style={{marginLeft:4, opacity:0.7, fontSize:10}}>
-                ({projects.filter(p => p.status === f.key).length})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Room No.</th><th>Team No</th><th>Team</th><th>Leader</th><th>Phone</th><th>Project</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>
-            {pagedProjects.map(p => (
-              <tr key={p.id} style={{cursor:'pointer'}} onClick={() => handleShowDetails(p.id)}>
-                <td><strong>{p.roomNumber}</strong></td>
-                <td>{p.teamNumber}</td>
-                <td>{p.team?.name}</td>
-                <td style={{fontSize:12}}>{p.leaderName || '—'}</td>
-                <td className="text-muted" style={{fontSize:12}}>{p.team?.phone || '—'}</td>
-                <td>{p.title} {p.status === 'FLAGGED' && <span style={{color:'#ff4444'}}>🚩</span>}</td>
-                <td><span className={`badge ${
-                  p.status === 'SCORED'            ? 'badge-success' :
-                  p.status === 'FLAGGED'           ? 'badge-danger'  :
-                  p.status === 'JUDGING_COMPLETE'  ? 'badge-info'    :
-                  p.status === 'IN_JUDGING'        ? 'badge-warning' :
-                  'badge-info'
-                }`}>{{
-                  SUBMITTED:        'Submitted',
-                  UNDER_REVIEW:     'Under Review',
-                  IN_JUDGING:       'Judging Started',
-                  JUDGING_COMPLETE: 'Judging Completed',
-                  FLAGGED:          'Flagged',
-                  SCORED:           'Scored'
-                }[p.status] || p.status}</span></td>
-                <td onClick={e => e.stopPropagation()}>
-                  <div className="flex gap-2">
-                    <button className="btn btn-ghost btn-sm" style={{color:'var(--accent)'}} onClick={() => handleOpenModal(p)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDelete(p.id)}>Delete</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-          </tbody>
-        </table>
-      </div>
-
-      <Pagination
-        page={page} totalPages={totalPages} total={total}
-        perPage={perPage} onPageChange={setPage} onPerPageChange={setPerPage}
+        }
       />
-        </>
-      )}
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content" style={{maxWidth:600}} onClick={e => e.stopPropagation()}>
-            <h2>{editingProject ? 'Edit Project' : 'Add New Project/Team'}</h2>
-            <form onSubmit={handleSave} className="grid grid-cols-2 gap-4 mt-4">
-              <div className="col-span-2"><h3 style={{fontSize:14,color:'var(--accent)',borderBottom:'1px solid var(--border-color)',paddingBottom:4}}>Project Info</h3></div>
-              <div className="form-group">
-                <label className="form-label">Project Title</label>
-                <input type="text" className="form-input" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Room No.</label>
-                <input type="text" className="form-input" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Status</label>
-                <select className="form-input" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                  <option value="SUBMITTED">Submitted</option>
-                  <option value="UNDER_REVIEW">Under Review</option>
-                  <option value="IN_JUDGING">Judging Started</option>
-                  <option value="JUDGING_COMPLETE">Judging Completed</option>
-                  <option value="FLAGGED">Flagged</option>
-                  <option value="SCORED">Scored</option>
-                </select>
-              </div>
+      {/* Filter and Search Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+        <SearchField
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search projects, teams, room numbers..."
+        />
 
-              <div className="col-span-2 mt-2"><h3 style={{fontSize:14,color:'var(--accent)',borderBottom:'1px solid var(--border-color)',paddingBottom:4}}>Team User Info</h3></div>
-              <div className="form-group">
-                <label className="form-label">Team Name</label>
-                <input type="text" className="form-input" value={formData.teamName} onChange={e => setFormData({...formData, teamName: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Team Number</label>
-                <input type="text" className="form-input" value={formData.teamNumber} onChange={e => setFormData({...formData, teamNumber: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Email (Login)</label>
-                <input type="email" className="form-input" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Leader Name</label>
-                <input type="text" className="form-input" value={formData.leaderName} onChange={e => setFormData({...formData, leaderName: e.target.value})} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Phone</label>
-                <input type="text" className="form-input" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} required />
-              </div>
-              
-              {!editingProject && (
-                <div className="form-group">
-                  <label className="form-label">Password (Optional)</label>
-                  <input type="text" className="form-input" placeholder="Random if empty" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-                </div>
-              )}
-
-              <div className="col-span-2 flex gap-2 mt-4">
-                <button type="submit" className="btn btn-primary flex-1">Save Project & Team</button>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-              </div>
-            </form>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>Filter Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="apple-select"
+            style={{ width: 'auto', minHeight: 34, fontSize: 'var(--font-size-xs)', padding: '6px 28px 6px 12px' }}
+          >
+            <option value="ALL">All Statuses ({projects.length})</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="UNDER_REVIEW">In Judging</option>
+            <option value="SCORED">Scored</option>
+            <option value="FLAGGED">Flagged</option>
+          </select>
         </div>
-      )}
+      </div>
 
-      {/* Project Detail Modal */}
-      {(loadingDetails || selectedDetails) && (
-        <div className="modal-overlay" onClick={closeDetailsModal}>
-          <div className="modal-content" style={{maxWidth:700}} onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h2>Project Evaluation Details</h2>
-              <button className="btn btn-ghost btn-sm" onClick={closeDetailsModal}>✕</button>
-            </div>
-            {loadingDetails ? (
-              <div style={{textAlign:'center', padding:'40px 20px'}}>
-                <div className="skeleton" style={{width:200, height:100, margin:'20px auto'}}/>
-              </div>
-            ) : (
-              <>
-            {/* ... modal content ... */}
-            <div className="grid gap-6">
-              {selectedDetails.length === 0 ? (
-                <div className="empty-state" style={{padding:'40px 20px'}}>
-                  <div style={{fontSize:40, marginBottom:16}}>🔗</div>
-                  <h3>No Assignments Yet</h3>
-                  <p className="text-muted">This project has not been assigned to any judging sets yet. Generate sets in the Assignments tab to start the judging process.</p>
-                </div>
+      {/* Projects Data Table */}
+      <div className="apple-table-container">
+        <div className="apple-table-scroll">
+          <table className="apple-table">
+            <thead>
+              <tr>
+                <th style={{ width: 80 }}># Team</th>
+                <th>Project Title</th>
+                <th>Team & Leader</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th style={{ width: 140, textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paged.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ padding: '40px 0' }}>
+                    <EmptyState
+                      icon={FolderGit2}
+                      title="No Projects Found"
+                      description={search ? "No project matches your search query." : "No projects have been added or imported yet."}
+                    />
+                  </td>
+                </tr>
               ) : (
-                selectedDetails.sort((a, b) => (b.set.status === 'COMPLETED' ? 1 : 0) - (a.set.status === 'COMPLETED' ? 1 : 0)).reverse().map((ev, idx) => {
-                  const isComplete = ev.set.status === 'COMPLETED';
-                  const score = ev.set.scores?.[0] || {};
-                  const feedback = ev.set.feedback?.[0];
-                  const rank = ev.set.stackRankVotes?.[0];
-                  return (
-                    <div key={idx} className="card" style={{
-                      borderLeft: `4px solid ${!isComplete ? 'var(--text-muted)' : rank ? 'var(--success)' : 'var(--accent)'}`,
-                      opacity: isComplete ? 1 : 0.6,
-                      background: isComplete ? 'var(--bg-card)' : 'transparent',
-                      borderStyle: isComplete ? 'solid' : 'dashed'
-                    }}>
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          {isComplete ? (
-                            <strong style={{fontSize:16}}>Judge: {ev.set.judge?.name || 'Anonymous'}</strong>
-                          ) : ev.set.judgeId ? (
-                            <strong style={{fontSize:16, color:'var(--warning)'}}>In Progress: {ev.set.judge?.name || 'Judge'}</strong>
-                          ) : (
-                            <strong style={{fontSize:16, color:'var(--text-muted)'}}>Slot: Awaiting Assignment</strong>
-                          )}
-                          <div className="text-sm text-muted">
-                            {(() => {
-                               const getRange = (pts) => {
-                                 if (!pts) return '';
-                                 const sorted = [...pts].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-                                 const m = sorted[0]?.project?.teamNumber?.match(/\d+/);
-                                 if (!m) return '';
-                                 const start = parseInt(m[0]);
-                                 return `${start} - ${start + sorted.length - 1}`;
-                               };
-                               return ev.set.setNumber === 0 ? '🏆 Tie-breaker round' : `Set ${ev.set.column} • ${getRange(ev.set.projects)}`;
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                      {isComplete ? (
-                        <>
-                          <div style={{display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:8, marginBottom:16}}>
-                            {['completion', 'originality', 'learning', 'design', 'technology'].map(f => (
-                              <div key={f} style={{background:'var(--bg-input)', padding:8, borderRadius:8, textAlign:'center', border:'1px solid var(--border-color)'}}>
-                                <div style={{fontSize:8, textTransform:'uppercase', color:'var(--text-muted)', marginBottom:4, whiteSpace:'nowrap'}}>{f}</div>
-                                <div style={{fontWeight:800, fontSize:16, color:'var(--accent)'}}>{score[f] ?? '—'}</div>
-                              </div>
-                            ))}
-                            <div style={{background: ev.set.setNumber === 0 ? 'var(--bg-input)' : 'var(--accent)', padding:8, borderRadius:8, textAlign:'center', border: ev.set.setNumber === 0 ? '1px solid var(--border-color)' : '1px solid var(--accent-glow)'}}>
-                              <div style={{fontSize:8, textTransform:'uppercase', color: ev.set.setNumber === 0 ? 'var(--text-muted)' : 'rgba(255,255,255,0.7)', marginBottom:4, whiteSpace:'nowrap'}}>
-                                {ev.set.setNumber === 0 ? 'MARKS' : 'TOTAL'}
-                              </div>
-                              <div style={{fontWeight:800, fontSize:16, color: ev.set.setNumber === 0 ? 'var(--text-primary)' : 'white'}}>{score.total ?? '—'}</div>
-                            </div>
-                          </div>
-                          {feedback && (
-                            <div style={{background:'rgba(255, 255, 255, 0.03)', padding:12, borderRadius:8, fontSize:13, border:'1px solid var(--border-color)', marginBottom:12}}>
-                              <span style={{color:'var(--text-muted)', fontWeight:600, marginRight:6}}>COMMENT:</span>
-                              {feedback.comment}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-center py-4 text-sm text-muted" style={{fontStyle:'italic'}}>
-                          {ev.set.judgeId ? 'Judge is currently evaluating this set.' : 'Judge has not started evaluating this set yet.'}
-                        </div>
+                paged.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <span className="tabular-nums" style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        {p.teamNumber ? `#${p.teamNumber}` : '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.title}</div>
+                      {p.demoLink && (
+                        <a
+                          href={p.demoLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2 }}
+                        >
+                          <ExternalLink size={10} /> Demo Link
+                        </a>
                       )}
-                    </div>
-                  );
-                })
+                    </td>
+                    <td>
+                      <div style={{ color: 'var(--text-primary)' }}>{p.team?.name || '—'}</div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
+                        {p.leaderName || p.team?.email || '—'}
+                      </div>
+                    </td>
+                    <td>
+                      {p.roomNumber ? (
+                        <span className="apple-badge apple-badge-default apple-badge-sm">
+                          Room {p.roomNumber}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>—</span>
+                      )}
+                    </td>
+                    <td>{getStatusBadge(p.status)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          onClick={() => handleShowDetails(p.id)}
+                          title="View Details"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          onClick={() => openEditModal(p)}
+                          title="Edit Project"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                          onClick={() => setDeletingProject(p)}
+                          title="Delete Project"
+                          style={{ color: 'var(--accent-danger)' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-            </div>
-            </>
-            )}
-          </div>
+            </tbody>
+          </table>
         </div>
-      )}
 
-      {/* ── Delete Confirm Modal ──────────────────────────── */}
-      {deletingProject && (
-        <div className="modal-overlay" onClick={() => setDeletingProject(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: 400, width: '100%'}}>
-            <div style={{height: 3, background: 'linear-gradient(90deg, #ef4444, #dc2626)', borderRadius: 2, marginBottom: 16}}/>
-            <div style={{textAlign: 'center', padding: '8px 0 20px'}}>
-              <div style={{fontSize: 40, marginBottom: 12}}>⚠️</div>
-              <h2 style={{margin: '0 0 8px', fontSize: 18, color: 'var(--text-primary)'}}>Delete Project?</h2>
-              <p style={{margin: 0, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6}}>
-                You're about to delete <strong style={{color: 'var(--text-primary)'}}>{projects.find(p => p.id === deletingProject)?.title}</strong>.
-                <br/><br/>
-                All associated <strong>judging progress</strong> and the <strong>team account</strong> (if unique to this event) will be permanently removed.
-                <br/><br/>
-                This action <strong>cannot be undone</strong>.
-              </p>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          perPage={perPage}
+          onPageChange={setPage}
+          onPerPageChange={setPerPage}
+        />
+      </div>
+
+      {/* Create / Edit Project Modal */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingProject ? 'Edit Project' : 'Register New Project'}
+        subtitle="Manage team details, room location, and credentials"
+        maxWidth="560px"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleSaveProject}>Save Project</Button>
+          </>
+        }
+      >
+        <form onSubmit={handleSaveProject}>
+          <Input
+            label="Project Title"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            placeholder="e.g. AI-Powered Assistant"
+            required
+          />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Input
+              label="Team Name"
+              value={formData.teamName}
+              onChange={(e) => setFormData({ ...formData, teamName: e.target.value })}
+              placeholder="e.g. CodeWizards"
+              required
+            />
+            <Input
+              label="Team Number"
+              value={formData.teamNumber}
+              onChange={(e) => setFormData({ ...formData, teamNumber: e.target.value })}
+              placeholder="e.g. 101"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Input
+              label="Assigned Room / Table"
+              value={formData.roomNumber}
+              onChange={(e) => setFormData({ ...formData, roomNumber: e.target.value })}
+              placeholder="e.g. Room 204"
+            />
+            <Input
+              label="Team Leader"
+              value={formData.leaderName}
+              onChange={(e) => setFormData({ ...formData, leaderName: e.target.value })}
+              placeholder="Full Name"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Input
+              label="Team Email"
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="team@example.com"
+              required
+            />
+            <Input
+              label="Contact Phone"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+1 555-0100"
+            />
+          </div>
+
+          {!editingProject && (
+            <Input
+              label="Initial Password"
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="Min 6 characters"
+              required
+            />
+          )}
+        </form>
+      </Modal>
+
+      {/* CSV Import Modal */}
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Teams via CSV"
+        subtitle="Batch register projects, tables, and team credentials"
+        maxWidth="600px"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowImportModal(false)}>Cancel</Button>
+            <Button variant="primary" icon={Upload} loading={importing} onClick={handleImportSubmit}>
+              Run Import
+            </Button>
+          </>
+        }
+      >
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginBottom: 10 }}>
+            Paste comma-separated data with headers: <code>team_name,team_number,room_number,team_leader,team_phone</code>
+          </div>
+          <textarea
+            value={importCsv}
+            onChange={(e) => setImportCsv(e.target.value)}
+            rows={7}
+            className="apple-input"
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 12, resize: 'vertical' }}
+          />
+        </div>
+
+        {importResult && (
+          <div style={{ padding: '12px 14px', background: 'var(--accent-success-tint)', border: '1px solid var(--accent-success)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'var(--font-size-xs)' }}>
+            <strong>Success:</strong> {importResult.count} teams processed successfully.
+          </div>
+        )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deletingProject}
+        onClose={() => setDeletingProject(null)}
+        title="Delete Project?"
+        subtitle="This action permanently deletes the submission and any associated judge scores."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeletingProject(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => handleDeleteProject(deletingProject.id)}>Delete</Button>
+          </>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+          Are you sure you want to remove <strong>{deletingProject?.title}</strong>? This cannot be undone.
+        </p>
+      </Modal>
+
+      {/* Project Drill-down Modal */}
+      <Modal
+        isOpen={!!selectedDetails}
+        onClose={() => setSelectedDetails(null)}
+        title={selectedDetails?.title || 'Project Details'}
+        subtitle={`Team: ${selectedDetails?.team?.name || 'Unknown'}`}
+        footer={<Button variant="secondary" onClick={() => setSelectedDetails(null)}>Close</Button>}
+      >
+        {selectedDetails && (
+          <div>
+            <div style={{ marginBottom: 14 }}>
+              <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600 }}>Assigned Sets</span>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                {selectedDetails.judgeSetProjects?.map((jsp) => (
+                  <span key={jsp.setId} className="apple-badge apple-badge-primary apple-badge-sm">
+                    Set #{jsp.set?.setNumber}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div style={{display: 'flex', gap: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)'}}>
-              <button className="btn btn-ghost" onClick={() => setDeletingProject(null)} style={{flex: 1}}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDelete} style={{flex: 1}}>
-                🗑 Delete Project
-              </button>
+
+            <div>
+              <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600 }}>Scores Submitted</span>
+              <div style={{ marginTop: 6 }}>
+                {selectedDetails.scores?.length === 0 ? (
+                  <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>No scores recorded yet.</p>
+                ) : (
+                  selectedDetails.scores?.map((s, i) => (
+                    <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-sm)', marginBottom: 6, fontSize: 'var(--font-size-xs)' }}>
+                      <strong>{s.judge?.name}:</strong> {s.completion + s.originality + s.learning + s.design + s.technology} / 50 points
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

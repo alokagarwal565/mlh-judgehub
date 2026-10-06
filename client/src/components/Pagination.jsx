@@ -1,11 +1,12 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
+import { ChevronLeft, ChevronRight } from './ui/icons';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
-export function usePagination(items, page, perPage) {
+export function usePagination(items = [], page = 1, perPage = 25) {
   return useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(items.length / perPage));
-    const safePage = Math.min(page, totalPages);
+    const safePage = Math.min(Math.max(1, page), totalPages);
     const start = (safePage - 1) * perPage;
     const paged = items.slice(start, start + perPage);
     return { paged, totalPages, safePage, total: items.length };
@@ -23,72 +24,103 @@ export default function Pagination({ page, totalPages, total, perPage, onPageCha
   const pages = [];
   for (let i = startPage; i <= endPage; i++) pages.push(i);
 
+  const startIdx = Math.min((page - 1) * perPage + 1, total);
+  const endIdx = Math.min(page * perPage, total);
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '12px 0', gap: 12, flexWrap: 'wrap'
-    }}>
-      {/* Left: info + per-page */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-        <span>
-          Showing <strong style={{ color: 'var(--text-primary)' }}>{Math.min((page - 1) * perPage + 1, total)}</strong>
-          –<strong style={{ color: 'var(--text-primary)' }}>{Math.min(page * perPage, total)}</strong>
-          {' '}of <strong style={{ color: 'var(--text-primary)' }}>{total}</strong>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 20px',
+        borderTop: '1px solid var(--border-subtle)',
+        gap: 16,
+        flexWrap: 'wrap'
+      }}
+    >
+      {/* Left: Info & per-page dropdown */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
+        <span className="tabular-nums">
+          Showing <strong style={{ color: 'var(--text-primary)' }}>{startIdx}</strong>–
+          <strong style={{ color: 'var(--text-primary)' }}>{endIdx}</strong> of{' '}
+          <strong style={{ color: 'var(--text-primary)' }}>{total}</strong>
         </span>
-        <select
-          value={perPage}
-          onChange={e => { onPerPageChange(Number(e.target.value)); onPageChange(1); }}
-          style={{
-            background: 'var(--bg-input)', color: 'var(--text-primary)',
-            border: '1px solid var(--border-light)', borderRadius: 6,
-            padding: '4px 8px', fontSize: 12, cursor: 'pointer'
-          }}
-        >
-          {PAGE_SIZES.map(n => <option key={n} value={n}>{n} / page</option>)}
-        </select>
+
+        {onPerPageChange && (
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <select
+              value={perPage}
+              onChange={(e) => {
+                onPerPageChange(Number(e.target.value));
+                onPageChange(1);
+              }}
+              className="apple-select"
+              style={{
+                fontSize: 'var(--font-size-xs)',
+                padding: '4px 24px 4px 10px',
+                minHeight: 28,
+                borderRadius: 'var(--radius-xs)',
+                background: 'var(--bg-surface-overlay)'
+              }}
+            >
+              {PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n} / page
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      {/* Right: page buttons */}
+      {/* Right: Page navigation controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <button
+          type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          style={{
-            padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-            cursor: page <= 1 ? 'not-allowed' : 'pointer',
-            background: 'transparent', color: page <= 1 ? 'var(--text-muted)' : 'var(--text-secondary)',
-            border: '1px solid var(--border-light)', opacity: page <= 1 ? 0.4 : 1,
-            transition: 'all 0.15s'
-          }}
-        >←</button>
+          className="apple-btn-icon-only apple-btn-secondary apple-btn-sm"
+          aria-label="Previous page"
+        >
+          <ChevronLeft size={14} />
+        </button>
 
         {startPage > 1 && (
           <>
             <PageBtn n={1} active={page === 1} onClick={onPageChange} />
-            {startPage > 2 && <span style={{ color: 'var(--text-muted)', fontSize: 12, padding: '0 4px' }}>…</span>}
+            {startPage > 2 && (
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)', padding: '0 4px' }}>
+                …
+              </span>
+            )}
           </>
         )}
 
-        {pages.map(n => <PageBtn key={n} n={n} active={page === n} onClick={onPageChange} />)}
+        {pages.map((n) => (
+          <PageBtn key={n} n={n} active={page === n} onClick={onPageChange} />
+        ))}
 
         {endPage < totalPages && (
           <>
-            {endPage < totalPages - 1 && <span style={{ color: 'var(--text-muted)', fontSize: 12, padding: '0 4px' }}>…</span>}
+            {endPage < totalPages - 1 && (
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)', padding: '0 4px' }}>
+                …
+              </span>
+            )}
             <PageBtn n={totalPages} active={page === totalPages} onClick={onPageChange} />
           </>
         )}
 
         <button
+          type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          style={{
-            padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-            cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-            background: 'transparent', color: page >= totalPages ? 'var(--text-muted)' : 'var(--text-secondary)',
-            border: '1px solid var(--border-light)', opacity: page >= totalPages ? 0.4 : 1,
-            transition: 'all 0.15s'
-          }}
-        >→</button>
+          className="apple-btn-icon-only apple-btn-secondary apple-btn-sm"
+          aria-label="Next page"
+        >
+          <ChevronRight size={14} />
+        </button>
       </div>
     </div>
   );
@@ -97,14 +129,27 @@ export default function Pagination({ page, totalPages, total, perPage, onPageCha
 function PageBtn({ n, active, onClick }) {
   return (
     <button
+      type="button"
       onClick={() => onClick(n)}
+      className="tabular-nums"
       style={{
-        minWidth: 32, height: 32, borderRadius: 6, fontSize: 12, fontWeight: 600,
-        cursor: 'pointer', transition: 'all 0.15s',
+        minWidth: 30,
+        height: 30,
+        borderRadius: 'var(--radius-xs)',
+        fontSize: 'var(--font-size-xs)',
+        fontWeight: active ? 700 : 500,
+        cursor: 'pointer',
+        transition: 'var(--transition-fast)',
         background: active ? 'var(--accent)' : 'transparent',
         color: active ? '#fff' : 'var(--text-secondary)',
-        border: active ? '1px solid var(--accent)' : '1px solid var(--border-light)'
+        border: active ? '1px solid var(--accent)' : '1px solid var(--border-subtle)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: active ? '0 1px 4px var(--accent-glow)' : 'none'
       }}
-    >{n}</button>
+    >
+      {n}
+    </button>
   );
 }

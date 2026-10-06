@@ -4,6 +4,14 @@ import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { useLoader } from '../../context/LoaderContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { SearchField } from '../../components/ui/Input';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ClockIcon, CheckCircleIcon, RefreshIcon, XCircleIcon, LayersIcon } from '../../components/ui/icons';
 
 export default function EditRequests() {
   const [requests, setRequests] = useState([]);
@@ -36,7 +44,7 @@ export default function EditRequests() {
     if (!socket) return;
     const handleNew = (req) => {
       setRequests(prev => [req, ...prev]);
-      info(`New edit request from ${req.judge?.name}`, 'Incoming Request');
+      info(`New set edit request from ${req.judge?.name}`, 'Incoming Request');
     };
     socket.on('edit-request:new', handleNew);
     return () => socket.off('edit-request:new', handleNew);
@@ -45,7 +53,7 @@ export default function EditRequests() {
   const handleAction = async (id, action) => {
     try {
       await api.post(`/edit-requests/${id}/${action}`);
-      info(`Request ${action === 'approve' ? 'approved' : 'denied'}`, 'Done');
+      info(`Request ${action === 'approve' ? 'approved' : 'denied'}`, 'Status Updated');
       loadRequests();
     } catch (err) {
       toastError(`Failed to ${action} request`);
@@ -56,10 +64,9 @@ export default function EditRequests() {
     if (!projects || projects.length === 0) return '';
     const nums = projects.map(p => p.project?.teamNumber).filter(n => n !== undefined && n !== null).sort((a, b) => a - b);
     if (nums.length === 0) return '';
-    return `• ${nums[0]} - ${nums[nums.length - 1]}`;
+    return `(${nums[0]} – ${nums[nums.length - 1]})`;
   };
 
-  // Filter and search
   const filteredRequests = requests.filter(req => {
     const searchLower = search.toLowerCase();
     const matchesSearch = search === '' || 
@@ -72,7 +79,6 @@ export default function EditRequests() {
     return matchesSearch && matchesStatus;
   });
 
-  // Count requests by status
   const statusCounts = {
     ALL: requests.length,
     PENDING: requests.filter(r => r.status === 'PENDING').length,
@@ -81,181 +87,207 @@ export default function EditRequests() {
     USED: requests.filter(r => r.status === 'USED').length
   };
 
-  const getStatusBadge = (status) => {
+  const renderStatusBadge = (status) => {
     switch (status) {
-      case 'PENDING': return <span className="badge badge-warning">PENDING</span>;
-      case 'APPROVED': return <span className="badge badge-success">APPROVED</span>;
-      case 'DENIED': return <span className="badge badge-danger">DENIED</span>;
-      case 'USED': return <span className="badge badge-info">USED</span>;
-      default: return <span className="badge">{status}</span>;
+      case 'PENDING':
+        return <Badge variant="warning" dot pulse>Pending Review</Badge>;
+      case 'APPROVED':
+        return <Badge variant="success" dot>Approved</Badge>;
+      case 'DENIED':
+        return <Badge variant="danger" dot>Denied</Badge>;
+      case 'USED':
+        return <Badge variant="neutral">Score Re-entered</Badge>;
+      default:
+        return <Badge variant="neutral">{status}</Badge>;
     }
   };
 
+  if (!activeEvent) {
+    return (
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+        <PageHeader title="Judge Re-evaluation Requests" subtitle="Review requests from judges to modify completed evaluations" />
+        <Card>
+          <EmptyState
+            icon={ClockIcon}
+            title="No Active Event Selected"
+            description="Select or mark an event as Active in Events to review judge unlock requests."
+            actionLabel="Go to Events"
+            onAction={() => window.location.href = '/admin/events'}
+          />
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div style={{maxWidth:1200, margin:'0 auto'}}>
-      {!activeEvent && (
-        <>
-          <div className="page-header" style={{alignItems:'flex-end', marginBottom:32}}>
-            <div>
-              <h1 style={{fontSize:28, fontWeight:800, marginBottom:4}}>Judge Edit Requests</h1>
-              <p className="text-muted" style={{fontSize:14}}>Review and manage judge requests for score updates</p>
-            </div>
-          </div>
-          <div style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            background: 'var(--bg-card)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            marginBottom: '20px'
-          }}>
-            <h2 style={{margin: '0 0 12px 0', color: 'var(--warning)'}}>⚠️ No Active Event</h2>
-            <p style={{margin: 0, color: 'var(--text-secondary)'}}>Please mark an event as Active in the Events page to view edit requests.</p>
-          </div>
-        </>
-      )}
+    <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <PageHeader
+        title="Judge Re-evaluation Requests"
+        subtitle="Review and approve score amendment requests from judges on completed sets"
+        badge={statusCounts.PENDING > 0 ? { text: `${statusCounts.PENDING} Pending`, variant: 'warning' } : undefined}
+        actions={
+          <Button variant="secondary" icon={RefreshIcon} onClick={loadRequests}>
+            Refresh Queue
+          </Button>
+        }
+      />
 
-      {!activeEvent ? null : (
-        <>
-          <div className="page-header" style={{alignItems:'flex-end', marginBottom:16,justifyContent:'space-between'}}>
-            <div>
-              <h1 style={{fontSize:28, fontWeight:800, marginBottom:4}}>Judge Edit Requests</h1>
-              <p className="text-muted" style={{fontSize:14}}>Review and manage judge requests for score updates</p>
-            </div>
-            <div className="flex gap-2">
-              <div style={{position:'relative', width:250}}>
-                <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Search judges, events, reasons..." 
-                  className="form-input" 
-                  style={{width:'100%', paddingLeft:32}}
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-              </div>
-              <button className="btn btn-ghost" onClick={loadRequests} style={{borderRadius:10}}>
-                <span>🔄</span> Refresh List
-              </button>
-            </div>
+      <Card style={{ padding: 0, overflow: 'hidden' }}>
+        {/* Controls Bar */}
+        <div style={{
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border-hairline)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 16
+        }}>
+          <div style={{ width: 280 }}>
+            <SearchField
+              placeholder="Search judge, reason, event..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
 
-          <div className="card" style={{padding:0, border:'1px solid var(--border-light)', overflow:'hidden'}}>
-            {/* Status filter pills - Always visible */}
-            <div style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', display:'flex', gap:8, flexWrap:'wrap'}}>
-              {[
-                { key:'ALL',       label:'All' },
-                { key:'PENDING',   label:'⏳ Pending' },
-                { key:'APPROVED',  label:'✅ Approved' },
-                { key:'DENIED',    label:'❌ Denied' },
-                { key:'USED',      label:'✏️ Used' },
-              ].map(f => (
-                <button
-                  key={f.key}
-                  className={`btn btn-sm ${statusFilter === f.key ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setStatusFilter(f.key)}
-                >
-                  {f.label}
-                  {f.key !== 'ALL' && (
-                    <span style={{marginLeft:4, opacity:0.7, fontSize:10}}>
-                      ({statusCounts[f.key]})
-                    </span>
-                  )}
-                </button>
-              ))}
-              {search && (
-                <span className="text-sm text-muted" style={{fontSize:11, marginLeft:'auto', alignSelf:'center'}}>
-                  Showing {filteredRequests.length} of {requests.length} requests
-                </span>
-              )}
-            </div>
+          <SegmentedControl
+            options={[
+              { value: 'ALL', label: 'All', badge: statusCounts.ALL },
+              { value: 'PENDING', label: 'Pending', badge: statusCounts.PENDING },
+              { value: 'APPROVED', label: 'Approved', badge: statusCounts.APPROVED },
+              { value: 'DENIED', label: 'Denied', badge: statusCounts.DENIED },
+              { value: 'USED', label: 'Re-evaluated', badge: statusCounts.USED }
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+        </div>
 
-            {loading ? (
-              <div style={{padding:40}}>
-                <div className="skeleton" style={{height: 40, width:'100%', marginBottom:12}} />
-                <div className="skeleton" style={{height: 120, width:'100%'}} />
-              </div>
-            ) : filteredRequests.length === 0 ? (
-              <div className="empty-state" style={{padding:'80px 20px'}}>
-                <div className="empty-state-icon" style={{fontSize:64, marginBottom:20, opacity:0.5}}>📩</div>
-                <h3 style={{fontSize:20, fontWeight:700, color:'var(--text-primary)'}}>{search || statusFilter !== 'ALL' ? 'No Matching Requests' : 'No Requests Found'}</h3>
-                <p style={{fontSize:14, maxWidth:300, margin:'0 auto'}}>{search || statusFilter !== 'ALL' ? 'Try adjusting your search or filters.' : 'When judges request to edit a completed set, they will appear here for your review.'}</p>
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table className="table" style={{borderCollapse:'separate', borderSpacing:0}}>
-                  <thead>
-                    <tr style={{background:'rgba(255,255,255,0.02)'}}>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Judge</th>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Event & Set</th>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Reason for Request</th>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Submitted</th>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)'}}>Status</th>
-                      <th style={{padding:'16px 24px', borderBottom:'1px solid var(--border-color)', textAlign:'right'}}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map(req => (
-                      <tr key={req.id} style={{transition:'all 0.2s'}}>
-                        <td style={{padding:'20px 24px'}}>
-                          <div className="flex items-center gap-3">
-                            <div style={{width:36, height:36, borderRadius:12, background:'var(--gradient-primary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700}}>
-                              {req.judge?.name?.[0].toUpperCase()}
-                            </div>
-                            <div>
-                              <div style={{fontWeight:700, fontSize:14}}>{req.judge?.name}</div>
-                              <div style={{fontSize:12, color:'var(--text-muted)'}}>{req.judge?.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{padding:'20px 24px'}}>
-                          <div style={{fontSize:13, fontWeight:600}}>{req.set?.event?.name}</div>
-                          <div className="badge badge-info" style={{marginTop:4, fontSize:10, borderRadius:6}}>
-                            Set {req.set?.column} {getSetRange(req.set?.projects)}
-                          </div>
-                        </td>
-                        <td style={{padding:'20px 24px', maxWidth:350}}>
-                          <div style={{
-                            fontSize:13, 
-                            lineHeight:1.5, 
-                            background:'rgba(255,255,255,0.02)', 
-                            padding:'10px 14px', 
-                            borderRadius:10, 
-                            border:'1px solid var(--border-color)',
-                            color:'var(--text-secondary)',
-                            fontStyle:'italic'
-                          }}>
-                            "{req.reason}"
-                          </div>
-                        </td>
-                        <td style={{padding:'20px 24px'}}>
-                          <div style={{fontSize:12, fontWeight:500}}>{new Date(req.createdAt).toLocaleDateString()}</div>
-                          <div style={{fontSize:11, color:'var(--text-muted)'}}>{new Date(req.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                        </td>
-                        <td style={{padding:'20px 24px'}}>{getStatusBadge(req.status)}</td>
-                        <td style={{padding:'20px 24px', textAlign:'right'}}>
-                          {req.status === 'PENDING' ? (
-                            <div className="flex gap-2 justify-end">
-                              <button className="btn btn-success btn-sm" onClick={() => handleAction(req.id, 'approve')} style={{borderRadius:8, padding:'6px 12px'}}>
-                                Approve
-                              </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => handleAction(req.id, 'deny')} style={{borderRadius:8, padding:'6px 12px'}}>
-                                Deny
-                              </button>
-                            </div>
-                          ) : (
-                            <span style={{fontSize:12, color:'var(--text-muted)', fontWeight:500, paddingRight:8}}>Processed</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        {filteredRequests.length === 0 ? (
+          <EmptyState
+            icon={LayersIcon}
+            title={search || statusFilter !== 'ALL' ? 'No Matching Requests' : 'No Unlock Requests'}
+            description={search || statusFilter !== 'ALL' ? 'Try adjusting your search query or filter pills.' : 'When a judge submits a request to modify a completed set evaluation, it will appear here.'}
+          />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-hairline)' }}>
+                  <th style={{ padding: '12px 24px', fontWeight: 600, color: 'var(--text-secondary)' }}>Judge</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Event & Set</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Reason for Amendment</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Submitted</th>
+                  <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
+                  <th style={{ padding: '12px 24px', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRequests.map(req => (
+                  <tr
+                    key={req.id}
+                    style={{
+                      borderBottom: '1px solid var(--border-hairline)',
+                      transition: 'background var(--transition-fast)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '18px 24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          background: 'var(--bg-elevated)',
+                          border: '1px solid var(--border-hairline)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text-primary)'
+                        }}>
+                          {req.judge?.name ? req.judge.name.slice(0, 2).toUpperCase() : 'JD'}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{req.judge?.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{req.judge?.email}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '18px 20px' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{req.set?.event?.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <Badge variant="accent">
+                          Set {req.set?.column} {getSetRange(req.set?.projects)}
+                        </Badge>
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '18px 20px', maxWidth: 320 }}>
+                      <div style={{
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        background: 'var(--bg-elevated)',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-hairline)',
+                        color: 'var(--text-secondary)',
+                        fontStyle: 'italic'
+                      }}>
+                        "{req.reason}"
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '18px 20px', fontVariantNumeric: 'tabular-nums' }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>
+                        {new Date(req.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '18px 20px' }}>
+                      {renderStatusBadge(req.status)}
+                    </td>
+
+                    <td style={{ padding: '18px 24px', textAlign: 'right' }}>
+                      {req.status === 'PENDING' ? (
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={CheckCircleIcon}
+                            onClick={() => handleAction(req.id, 'approve')}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            icon={XCircleIcon}
+                            onClick={() => handleAction(req.id, 'deny')}
+                          >
+                            Deny
+                          </Button>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                          Processed
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </>
-      )}
+        )}
+      </Card>
     </div>
   );
 }
