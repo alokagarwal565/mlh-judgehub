@@ -42,6 +42,8 @@ export async function updateProjectJudgingStatus(projectId: string): Promise<voi
     newStatus = 'JUDGING_COMPLETE';
   } else if (assignedCount >= 1) {
     newStatus = 'IN_JUDGING';
+  } else {
+    newStatus = 'SUBMITTED';
   }
 
   if (newStatus && newStatus !== project.status) {

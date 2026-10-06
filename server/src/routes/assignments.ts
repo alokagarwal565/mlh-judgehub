@@ -306,4 +306,56 @@ router.post('/:eventId/assignments/manual-assign', authenticate, requireActiveEv
   }
 });
 
+// POST /api/events/:eventId/assignments/unassign
+// Admin unassigns a judge from an IN_PROGRESS set, returning it to UNASSIGNED
+router.post('/:eventId/assignments/unassign', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { setId } = req.body;
+    if (!setId) return res.status(400).json({ error: 'setId is required' });
+
+    const set = await prisma.judgeSet.findUnique({
+      where: { id: setId },
+      include: { projects: { select: { projectId: true } } }
+    });
+    if (!set) return res.status(404).json({ error: 'Set not found' });
+    if (set.eventId !== eventId) return res.status(400).json({ error: 'Set does not belong to this event' });
+    if (set.status === 'COMPLETED') {
+      return res.status(400).json({ error: 'Cannot unassign a completed set' });
+    }
+    if (set.status === 'UNASSIGNED') {
+      return res.status(400).json({ error: 'Set is already unassigned' });
+    }
+
+    // Delete any draft/partial evaluation data for this set
+    await prisma.score.deleteMany({ where: { setId } });
+    await prisma.stackRankVote.deleteMany({ where: { setId } });
+    await prisma.trackNomination.deleteMany({ where: { setId } });
+    await prisma.feedback.deleteMany({ where: { setId } });
+    await prisma.editRequest.deleteMany({ where: { setId } });
+
+    // Mark set as UNASSIGNED with no judge
+    await prisma.judgeSet.update({
+      where: { id: setId },
+      data: { judgeId: null, status: 'UNASSIGNED' }
+    });
+
+    // Update project statuses
+    const { updateProjectJudgingStatus } = await import('../engine/assignment.js');
+    for (const p of set.projects) {
+      await updateProjectJudgingStatus(p.projectId);
+    }
+
+    const io = req.app.get('io');
+    const progress = await getAssignmentProgress(eventId);
+    if (io) {
+      io.to(`event:${eventId}`).emit('judging:progress', { eventId, ...progress });
+    }
+
+    res.json({ message: 'Judge unassigned successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

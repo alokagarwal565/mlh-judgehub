@@ -56,6 +56,8 @@ export default function AdminAssignments() {
   const [selectedSet, setSelectedSet] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [judgeSearch, setJudgeSearch] = useState('');
+  const [unassignTargetSet, setUnassignTargetSet] = useState(null);
+  const [unassigning, setUnassigning] = useState(false);
 
   useEffect(() => {
     if (activeEvent) {
@@ -145,15 +147,20 @@ export default function AdminAssignments() {
     }
   };
 
-  const handleUnassign = async (setId) => {
-    if (!window.confirm('Are you sure you want to unassign this judge?')) return;
+  const confirmUnassign = async () => {
+    if (!unassignTargetSet) return;
+    setUnassigning(true);
     try {
-      await api.post(`/events/${eventId}/assignments/unassign`, { setId });
-      toastSuccess('Judge unassigned from set');
+      const targetEventId = unassignTargetSet.eventId || eventId || activeEvent?.id;
+      await api.post(`/events/${targetEventId}/assignments/unassign`, { setId: unassignTargetSet.id });
+      toastSuccess(`Unassigned ${unassignTargetSet.judge?.name || 'judge'} from Set #${unassignTargetSet.setNumber}`);
+      setUnassignTargetSet(null);
       loadSets();
       loadIdleJudges();
     } catch (err) {
       toastError(err.response?.data?.error || 'Failed to unassign judge');
+    } finally {
+      setUnassigning(false);
     }
   };
 
@@ -627,7 +634,10 @@ export default function AdminAssignments() {
                                     !isSetComplete && (
                                       <button
                                         type="button"
-                                        onClick={() => handleUnassign(set.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setUnassignTargetSet(set);
+                                        }}
                                         style={{
                                           background: 'transparent',
                                           border: 'none',
@@ -948,6 +958,46 @@ export default function AdminAssignments() {
           </div>
         </div>
       </Modal>
+
+      {/* Unassign Confirmation Modal */}
+      {unassignTargetSet && (
+        <Modal
+          isOpen={true}
+          onClose={() => !unassigning && setUnassignTargetSet(null)}
+          title="Unassign Evaluator"
+          subtitle={`Set #${unassignTargetSet.setNumber}`}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => setUnassignTargetSet(null)}
+                disabled={unassigning}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={confirmUnassign}
+                loading={unassigning}
+              >
+                Unassign Judge
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(255, 69, 58, 0.08)', border: '1px solid rgba(255, 69, 58, 0.2)' }}>
+              <AlertTriangle size={20} style={{ color: 'var(--accent-danger)', flexShrink: 0 }} />
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Are you sure you want to unassign <strong style={{ color: 'var(--text-primary)' }}>{unassignTargetSet.judge?.name}</strong> from <strong style={{ color: 'var(--text-primary)' }}>Set #{unassignTargetSet.setNumber}</strong>?
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-tertiary)', margin: 0, lineHeight: 1.5 }}>
+              This set will return to the unassigned queue. Any uncommitted evaluation drafts for this set will be cleared so another evaluator can pick it up cleanly.
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
