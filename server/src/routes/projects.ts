@@ -20,6 +20,10 @@ router.get('/:eventId/projects', authenticate, requireActiveEvent, async (req, r
             name: true, 
             phone: true
           } 
+        },
+        flags: {
+          where: { status: 'OPEN' },
+          select: { id: true, reason: true, flaggedBy: true, createdAt: true }
         } 
       },
       orderBy: { roomNumber: 'asc' }
@@ -305,6 +309,133 @@ router.post('/:eventId/projects/import', authenticate, requireRole('ADMIN'), asy
       imported: credentials.length,
       credentials
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/events/:eventId/projects/:projectId/absence — Mark team absent or finalize 2nd absence
+router.post('/:eventId/projects/:projectId/absence', authenticate, requireActiveEvent, async (req, res) => {
+  try {
+    const { eventId, projectId } = req.params;
+    const { isFinalAbsent, newRoomNumber, notes } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { team: true }
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const io = req.app.get('io');
+
+    if (isFinalAbsent) {
+      if (req.body.setId) {
+        await prisma.score.upsert({
+          where: {
+            setId_projectId_judgeId: {
+              setId: req.body.setId,
+              projectId,
+              judgeId: req.user!.userId
+            }
+          },
+          update: {
+            completion: 0,
+            originality: 0,
+            learning: 0,
+            design: 0,
+            technology: 0,
+            total: 0,
+            timeSpentSeconds: 0
+          },
+          create: {
+            setId: req.body.setId,
+            projectId,
+            judgeId: req.user!.userId,
+            completion: 0,
+            originality: 0,
+            learning: 0,
+            design: 0,
+            technology: 0,
+            total: 0,
+            timeSpentSeconds: 0
+          }
+        });
+      }
+
+      await prisma.flag.upsert({
+        where: {
+          projectId_flaggedBy: {
+            projectId,
+            flaggedBy: req.user!.userId
+          }
+        },
+        update: {
+          reason: `[ABSENT_FINAL] Team absent on 2nd attempt. Default floor mark (0 pts) applied. ${notes || ''}`,
+          status: 'REVIEWED'
+        },
+        create: {
+          eventId,
+          projectId,
+          flaggedBy: req.user!.userId,
+          reason: `[ABSENT_FINAL] Team absent on 2nd attempt. Default floor mark (0 pts) applied. ${notes || ''}`,
+          status: 'REVIEWED'
+        }
+      });
+
+      if (io) {
+        io.to(`event:${eventId}`).emit('team:absent:finalized', { projectId, title: project.title });
+      }
+
+      return res.json({ message: '2nd attempt final absence recorded with default floor score 0.' });
+    }
+
+    // 1st attempt absence reported by judge
+    const flag = await prisma.flag.upsert({
+      where: {
+        projectId_flaggedBy: {
+          projectId,
+          flaggedBy: req.user!.userId
+        }
+      },
+      update: {
+        reason: `[ABSENT] Team not at assigned table (Room: ${project.roomNumber || 'TBD'}). ${notes || ''}`,
+        status: 'OPEN'
+      },
+      create: {
+        eventId,
+        projectId,
+        flaggedBy: req.user!.userId,
+        reason: `[ABSENT] Team not at assigned table (Room: ${project.roomNumber || 'TBD'}). ${notes || ''}`,
+        status: 'OPEN'
+      }
+    });
+
+    if (newRoomNumber) {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { roomNumber: newRoomNumber }
+      });
+    }
+
+    if (io) {
+      io.to(`event:${eventId}`).emit('team:absent', {
+        projectId,
+        teamName: project.team.name,
+        leaderName: project.leaderName,
+        phone: project.team.phone,
+        roomNumber: newRoomNumber || project.roomNumber,
+        flaggedBy: req.user!.name
+      });
+      io.to(`event:${eventId}`).emit('flag:created', {
+        eventId,
+        flagId: flag.id,
+        projectId,
+        reason: flag.reason,
+        flaggedBy: req.user!.name
+      });
+    }
+
+    res.json({ message: 'Absence reported. Floor admins alerted to contact and locate team.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

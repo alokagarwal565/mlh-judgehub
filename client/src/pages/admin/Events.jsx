@@ -9,6 +9,7 @@ import Button from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
+import { SkeletonCard } from '../../components/ui/Skeleton';
 import {
   Calendar,
   Plus,
@@ -23,6 +24,9 @@ import {
 
 export default function AdminEvents() {
   const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activatingId, setActivatingId] = useState(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [deletingEvent, setDeletingEvent] = useState(null);
@@ -31,15 +35,20 @@ export default function AdminEvents() {
   const { success, error: toastError } = useToast();
   const { refreshActiveEvent } = useActiveEvent();
 
-  const loadEvents = () => {
-    api.get('/events').then((r) => setEvents(r.data)).catch(() => {});
+  const loadEvents = (showSkeleton = false) => {
+    if (showSkeleton) setLoading(true);
+    api.get('/events')
+      .then((r) => setEvents(r.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    loadEvents();
+    loadEvents(true);
   }, []);
 
   const handleActivate = async (id) => {
+    setActivatingId(id);
     try {
       await api.post(`/events/${id}/activate`);
       success('Event set as globally active');
@@ -47,6 +56,8 @@ export default function AdminEvents() {
       refreshActiveEvent();
     } catch (err) {
       toastError('Failed to activate event');
+    } finally {
+      setActivatingId(null);
     }
   };
 
@@ -71,6 +82,7 @@ export default function AdminEvents() {
   };
 
   const updateStatus = async (id, status) => {
+    setStatusUpdatingId(id);
     try {
       await api.put(`/events/${id}`, { status });
       success(`Event status shifted to ${status}`);
@@ -78,6 +90,8 @@ export default function AdminEvents() {
       refreshActiveEvent();
     } catch (err) {
       toastError('Failed to update event status');
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -143,14 +157,19 @@ export default function AdminEvents() {
       />
 
       {/* Events Grid */}
-      {events.length === 0 ? (
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={3} />
+        </div>
+      ) : events.length === 0 ? (
         <Card>
           <EmptyState
             icon={Calendar}
             title="No Events Found"
             description="Create your first hackathon event or seed demo sample data to start evaluating projects."
             action={
-              <Button variant="primary" icon={Sparkles} onClick={createSample}>
+              <Button variant="primary" icon={Sparkles} loading={creatingSample} onClick={createSample}>
                 Seed AceHack 5.0 Demo
               </Button>
             }
@@ -191,16 +210,33 @@ export default function AdminEvents() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {!ev.isActive && (
-                    <Button variant="secondary" size="sm" onClick={() => handleActivate(ev.id)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={activatingId === ev.id}
+                      onClick={() => handleActivate(ev.id)}
+                    >
                       Make Active
                     </Button>
                   )}
                   {ev.status !== 'JUDGING' ? (
-                    <Button variant="secondary" size="sm" icon={Play} onClick={() => updateStatus(ev.id, 'JUDGING')}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={Play}
+                      loading={statusUpdatingId === ev.id}
+                      onClick={() => updateStatus(ev.id, 'JUDGING')}
+                    >
                       Start Judging
                     </Button>
                   ) : (
-                    <Button variant="secondary" size="sm" icon={CheckCircle2} onClick={() => updateStatus(ev.id, 'COMPLETED')}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={CheckCircle2}
+                      loading={statusUpdatingId === ev.id}
+                      onClick={() => updateStatus(ev.id, 'COMPLETED')}
+                    >
                       Complete Event
                     </Button>
                   )}

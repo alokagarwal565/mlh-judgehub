@@ -44,10 +44,20 @@ export function SearchField({
   onClear,
   placeholder = 'Search...',
   className = '',
+  style = {},
+  width,
+  maxWidth,
   ...props
 }) {
   return (
-    <div className={`apple-search-field ${className}`}>
+    <div
+      className={`apple-search-field ${className}`}
+      style={{
+        ...(width ? { width } : {}),
+        ...(maxWidth ? { maxWidth } : {}),
+        ...style
+      }}
+    >
       <Search size={15} className="apple-search-icon" />
       <input
         type="search"

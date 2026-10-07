@@ -9,6 +9,7 @@ import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { SearchField, Select } from '../../components/ui/Input';
+import SegmentedControl from '../../components/ui/SegmentedControl';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
 import {
@@ -48,6 +49,8 @@ export default function AdminAssignments() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [timeFilter, setTimeFilter] = useState('ALL'); // ALL, OVERDUE, ACTIVE, FAST, ZERO
+  const [sortBy, setSortBy] = useState('DEFAULT'); // DEFAULT, LONGEST, RECENT
 
   // Manual assign drawer/modal
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -58,6 +61,15 @@ export default function AdminAssignments() {
   const [judgeSearch, setJudgeSearch] = useState('');
   const [unassignTargetSet, setUnassignTargetSet] = useState(null);
   const [unassigning, setUnassigning] = useState(false);
+
+  // Reassign modal state
+  const [reassignModalOpen, setReassignModalOpen] = useState(false);
+  const [reassignTargetSet, setReassignTargetSet] = useState(null);
+  const [eligibleJudges, setEligibleJudges] = useState([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
+  const [selectedReplacementJudge, setSelectedReplacementJudge] = useState(null);
+  const [reassignReason, setReassignReason] = useState('');
+  const [reassigning, setReassigning] = useState(false);
 
   useEffect(() => {
     if (activeEvent) {
@@ -164,6 +176,46 @@ export default function AdminAssignments() {
     }
   };
 
+  const openReassignModal = async (set) => {
+    setReassignTargetSet(set);
+    setSelectedReplacementJudge(null);
+    setReassignReason('');
+    setReassignModalOpen(true);
+    setLoadingEligible(true);
+    try {
+      const targetEventId = set.eventId || eventId || activeEvent?.id;
+      const res = await api.get(`/events/${targetEventId}/assignments/${set.id}/eligible-judges`);
+      setEligibleJudges(res.data.judges || []);
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to load eligible replacement judges');
+    } finally {
+      setLoadingEligible(false);
+    }
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignTargetSet || !selectedReplacementJudge) return;
+    setReassigning(true);
+    try {
+      const targetEventId = reassignTargetSet.eventId || eventId || activeEvent?.id;
+      const res = await api.post(`/events/${targetEventId}/assignments/reassign`, {
+        setId: reassignTargetSet.id,
+        newJudgeId: selectedReplacementJudge.id,
+        reason: reassignReason.trim()
+      });
+      toastSuccess(res.data.message || 'Set successfully reassigned');
+      setReassignModalOpen(false);
+      setReassignTargetSet(null);
+      setSelectedReplacementJudge(null);
+      loadSets();
+      loadIdleJudges();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to reassign set');
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   const getSetRange = (projects) => {
     if (!projects || projects.length === 0) return '';
     const sorted = [...projects].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -201,6 +253,16 @@ export default function AdminAssignments() {
   const filterSet = (set) => {
     const q = search.toLowerCase().trim();
     if (statusFilter !== 'ALL' && set.status !== statusFilter) return false;
+
+    // Time / Duration filtering
+    if (timeFilter !== 'ALL') {
+      const dur = set.totalTimeSpentSeconds ?? set.scores?.reduce((sum, sc) => sum + (sc.timeSpentSeconds || 0), 0) ?? 0;
+      if (timeFilter === 'OVERDUE' && (dur < 900 || set.status === 'COMPLETED')) return false;
+      if (timeFilter === 'ACTIVE' && (dur < 300 || dur >= 900)) return false;
+      if (timeFilter === 'FAST' && (dur <= 0 || dur >= 300)) return false;
+      if (timeFilter === 'ZERO' && dur > 0) return false;
+    }
+
     if (!q) return true;
     if (String(set.setNumber || '').toLowerCase().includes(q)) return true;
     if (set.judge?.name?.toLowerCase().includes(q)) return true;
@@ -212,6 +274,20 @@ export default function AdminAssignments() {
       const room = (sp.project?.roomNumber || '').toLowerCase();
       return title.includes(q) || team.includes(q) || num.includes(q) || room.includes(q);
     });
+  };
+
+  const sortSets = (list) => {
+    if (sortBy === 'LONGEST') {
+      return [...list].sort((a, b) => {
+        const durA = a.totalTimeSpentSeconds ?? a.scores?.reduce((sum, s) => sum + (s.timeSpentSeconds || 0), 0) ?? 0;
+        const durB = b.totalTimeSpentSeconds ?? b.scores?.reduce((sum, s) => sum + (s.timeSpentSeconds || 0), 0) ?? 0;
+        return durB - durA;
+      });
+    }
+    if (sortBy === 'RECENT') {
+      return [...list].sort((a, b) => new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0));
+    }
+    return list;
   };
 
   // Status counts
@@ -294,44 +370,72 @@ export default function AdminAssignments() {
         }
       />
 
-      {/* Filter and Search Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* Unified Filter and Search Toolbar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 14,
+          marginBottom: 20,
+          flexWrap: 'wrap'
+        }}
+      >
         <SearchField
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search judge, team, room number, or team range..."
+          style={{ width: 520, minWidth: 420, maxWidth: 600 }}
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            { id: 'ALL', label: `All (${totalCount})` },
-            { id: 'IN_PROGRESS', label: `In Progress (${inProgressCount})` },
-            { id: 'COMPLETED', label: `Completed (${completedCount})` },
-            { id: 'UNASSIGNED', label: `Unassigned (${unassignedCount})` }
-          ].map((item) => {
-            const isActive = statusFilter === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setStatusFilter(item.id)}
-                style={{
-                  height: 32,
-                  padding: '0 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 'var(--font-size-xs)',
-                  fontWeight: isActive ? 600 : 500,
-                  cursor: 'pointer',
-                  border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                  background: isActive ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.04)',
-                  color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                  transition: 'all var(--transition-fast)'
-                }}
-              >
-                {item.label}
-              </button>
-            );
-          })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <SegmentedControl
+            size="sm"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { id: 'ALL', label: 'All', badge: totalCount },
+              { id: 'IN_PROGRESS', label: 'In Progress', badge: inProgressCount },
+              { id: 'COMPLETED', label: 'Completed', badge: completedCount },
+              { id: 'UNASSIGNED', label: 'Unassigned', badge: unassignedCount }
+            ]}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+              Duration:
+            </span>
+            <Select
+              size="sm"
+              width={160}
+              value={timeFilter}
+              onChange={(e) => setTimeFilter(e.target.value)}
+              options={[
+                { value: 'ALL', label: 'All Durations' },
+                { value: 'OVERDUE', label: '⚠️ Stalled (>15m)' },
+                { value: 'ACTIVE', label: 'Active (5–15m)' },
+                { value: 'FAST', label: 'Quick (<5m)' },
+                { value: 'ZERO', label: 'Not Started' }
+              ]}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+              Order:
+            </span>
+            <Select
+              size="sm"
+              width={175}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              options={[
+                { value: 'DEFAULT', label: 'Default (Set #)' },
+                { value: 'LONGEST', label: 'Longest Active First' },
+                { value: 'RECENT', label: 'Recently Active First' }
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -380,7 +484,7 @@ export default function AdminAssignments() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 14 }}>
-                {tieBreakers.map((set) => (
+                {sortSets(tieBreakers.filter(filterSet)).map((set) => (
                   <div
                     key={set.id}
                     className="mlh-set-card status-tie-breaker"
@@ -456,7 +560,7 @@ export default function AdminAssignments() {
                 .filter((s) => s.column === col && s.setNumber > 0)
                 .sort((a, b) => (a.setNumber || 0) - (b.setNumber || 0));
 
-              const filteredSets = colSets.filter(filterSet);
+              const filteredSets = sortSets(colSets.filter(filterSet));
               const completed = colSets.filter((s) => s.status === 'COMPLETED').length;
               const inProgress = colSets.filter((s) => s.status === 'IN_PROGRESS').length;
               const unassigned = colSets.filter((s) => s.status === 'UNASSIGNED').length;
@@ -608,78 +712,81 @@ export default function AdminAssignments() {
                               </div>
                             </div>
 
-                            {/* Evaluator / Judge Row */}
+                            {/* Evaluator / Judge Box */}
                             <div
                               style={{
                                 padding: '10px 12px',
                                 borderRadius: 'var(--radius-sm)',
                                 background: set.judge ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 159, 10, 0.04)',
-                                border: `1px solid ${set.judge ? 'var(--border-subtle)' : 'rgba(255, 159, 10, 0.2)'}`
+                                border: `1px solid ${set.judge ? 'var(--border-subtle)' : 'rgba(255, 159, 10, 0.2)'}`,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6
                               }}
                             >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <User size={15} style={{ color: set.judge ? 'var(--accent)' : 'var(--text-tertiary)' }} />
-                                  <div>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: set.judge ? 'var(--text-primary)' : 'var(--accent-warning)' }}>
-                                      {set.judge ? set.judge.name : 'No Evaluator Assigned'}
-                                    </div>
-                                    {set.judge && (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                                        {set.judge.phone && (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                            <Phone size={11} /> {set.judge.phone}
-                                          </span>
-                                        )}
-                                        {set.recentLocation && (
-                                          <span
-                                            style={{
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              gap: 3,
-                                              color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-secondary)',
-                                              fontWeight: set.locationStatus === 'ACTIVE' ? 600 : 400
-                                            }}
-                                            title={
-                                              set.locationStatus === 'ACTIVE'
-                                                ? `Currently evaluating in ${cleanRoom(set.recentLocation)}`
-                                                : `Last room evaluated: ${cleanRoom(set.recentLocation)}`
-                                            }
-                                          >
-                                            <MapPin size={11} style={{ color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-tertiary)' }} />
-                                            <span>
-                                              {set.locationStatus === 'ACTIVE' ? 'Now: ' : 'Last: '}
-                                              {cleanRoom(set.recentLocation)}
-                                            </span>
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
+                              {/* Row 1: Evaluator Name & Actions */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                  <User size={14} style={{ color: set.judge ? 'var(--accent)' : 'var(--text-tertiary)', flexShrink: 0 }} />
+                                  <span
+                                    style={{
+                                      fontWeight: 600,
+                                      fontSize: 13,
+                                      color: set.judge ? 'var(--text-primary)' : 'var(--accent-warning)',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis'
+                                    }}
+                                  >
+                                    {set.judge ? set.judge.name : 'No Evaluator Assigned'}
+                                  </span>
                                 </div>
 
-                                <div>
+                                <div style={{ flexShrink: 0 }}>
                                   {set.judge ? (
                                     !isSetComplete && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setUnassignTargetSet(set);
-                                        }}
-                                        style={{
-                                          background: 'transparent',
-                                          border: 'none',
-                                          color: 'var(--accent-danger)',
-                                          fontSize: 11,
-                                          fontWeight: 500,
-                                          cursor: 'pointer',
-                                          padding: '2px 6px'
-                                        }}
-                                        title="Unassign judge from this set"
-                                      >
-                                        Unassign
-                                      </button>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openReassignModal(set);
+                                          }}
+                                          style={{
+                                            background: 'var(--accent-tint)',
+                                            border: '1px solid var(--accent)',
+                                            color: 'var(--accent)',
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            padding: '2px 8px',
+                                            borderRadius: 'var(--radius-pill)',
+                                            transition: 'all var(--transition-fast)'
+                                          }}
+                                          title="Reassign this set to another eligible judge"
+                                        >
+                                          Reassign
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setUnassignTargetSet(set);
+                                          }}
+                                          style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: 'var(--accent-danger)',
+                                            fontSize: 11,
+                                            fontWeight: 500,
+                                            cursor: 'pointer',
+                                            padding: '2px 6px'
+                                          }}
+                                          title="Unassign judge from this set"
+                                        >
+                                          Unassign
+                                        </button>
+                                      </div>
                                     )
                                   ) : (
                                     <button
@@ -692,8 +799,11 @@ export default function AdminAssignments() {
                                         fontSize: 11,
                                         fontWeight: 600,
                                         cursor: 'pointer',
-                                        padding: '4px 10px',
-                                        borderRadius: 'var(--radius-xs)'
+                                        padding: '3px 10px',
+                                        borderRadius: 'var(--radius-pill)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4
                                       }}
                                     >
                                       + Assign
@@ -701,6 +811,57 @@ export default function AdminAssignments() {
                                   )}
                                 </div>
                               </div>
+
+                              {/* Row 2: Phone & Room Location Telemetry */}
+                              {set.judge && (set.judge.phone || set.recentLocation) && (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    fontSize: 11,
+                                    color: 'var(--text-tertiary)',
+                                    flexWrap: 'wrap',
+                                    paddingTop: 4,
+                                    borderTop: '1px solid rgba(255, 255, 255, 0.04)'
+                                  }}
+                                >
+                                  {set.judge.phone && (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                                      <Phone size={10} style={{ color: 'var(--text-tertiary)' }} />
+                                      <span>{set.judge.phone}</span>
+                                    </span>
+                                  )}
+
+                                  {set.judge.phone && set.recentLocation && (
+                                    <span style={{ color: 'var(--text-tertiary)', opacity: 0.4 }}>·</span>
+                                  )}
+
+                                  {set.recentLocation && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        whiteSpace: 'nowrap',
+                                        color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-secondary)',
+                                        fontWeight: set.locationStatus === 'ACTIVE' ? 600 : 400
+                                      }}
+                                      title={
+                                        set.locationStatus === 'ACTIVE'
+                                          ? `Currently evaluating in ${cleanRoom(set.recentLocation)}`
+                                          : `Last room evaluated: ${cleanRoom(set.recentLocation)}`
+                                      }
+                                    >
+                                      <MapPin size={10} style={{ color: set.locationStatus === 'ACTIVE' ? 'var(--accent)' : 'var(--text-tertiary)' }} />
+                                      <span>
+                                        {set.locationStatus === 'ACTIVE' ? 'Now: ' : 'Last: '}
+                                        {cleanRoomBadge(set.recentLocation)}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             {/* Projects In Set List */}
@@ -1090,6 +1251,173 @@ export default function AdminAssignments() {
             <p style={{ fontSize: 13, color: 'var(--text-tertiary)', margin: 0, lineHeight: 1.5 }}>
               This set will return to the unassigned queue. Any uncommitted evaluation drafts for this set will be cleared so another evaluator can pick it up cleanly.
             </p>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Safe Reassignment Modal with Eligibility Check & Conflict Prevention ── */}
+      {reassignTargetSet && (
+        <Modal
+          isOpen={reassignModalOpen}
+          onClose={() => !reassigning && setReassignModalOpen(false)}
+          title={`Reassign Set #${reassignTargetSet.setNumber}`}
+          subtitle={`Currently allocated to ${reassignTargetSet.judge?.name || 'Evaluator'}`}
+          maxWidth="640px"
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {selectedReplacementJudge ? (
+                  <span>
+                    New Evaluator: <strong style={{ color: 'var(--accent)' }}>{selectedReplacementJudge.name}</strong>
+                  </span>
+                ) : (
+                  <span>Select an eligible replacement evaluator</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => setReassignModalOpen(false)}
+                  disabled={reassigning}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleConfirmReassign}
+                  disabled={!selectedReplacementJudge}
+                  loading={reassigning}
+                >
+                  Confirm Reassignment
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Context Box */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--border-subtle)'
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Set #{reassignTargetSet.setNumber} · {reassignTargetSet.column > 0 ? `Wave ${reassignTargetSet.column}` : 'Tie Breaker'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  Teams {getSetRange(reassignTargetSet.projects)} ({reassignTargetSet.projects?.length || 0} teams)
+                </div>
+              </div>
+              <Badge variant="warning" dot pulse>
+                In Progress
+              </Badge>
+            </div>
+
+            {/* Replacement Evaluators List */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
+                  Available Replacement Evaluators
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--accent-success)', fontWeight: 600 }}>
+                  {eligibleJudges.filter((j) => j.isEligible).length} Eligible
+                </span>
+              </div>
+
+              {loadingEligible ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  Verifying evaluator eligibility and evaluating project overlap...
+                </div>
+              ) : eligibleJudges.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  No other evaluators registered for this event.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}>
+                  {eligibleJudges.map((judge) => {
+                    const isSelected = selectedReplacementJudge?.id === judge.id;
+                    const canSelect = judge.isEligible;
+
+                    return (
+                      <div
+                        key={judge.id}
+                        onClick={() => canSelect && setSelectedReplacementJudge(judge)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          cursor: canSelect ? 'pointer' : 'not-allowed',
+                          background: isSelected ? 'var(--accent-tint)' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                          opacity: canSelect ? 1 : 0.5,
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: canSelect ? 'var(--accent-success)' : 'var(--accent-danger)',
+                                boxShadow: `0 0 6px ${canSelect ? 'var(--accent-success)' : 'var(--accent-danger)'}80`,
+                                flexShrink: 0
+                              }}
+                            />
+                            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                              {judge.name}
+                            </span>
+                            {judge.phone && (
+                              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>· {judge.phone}</span>
+                            )}
+                          </div>
+
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '1px 7px',
+                              borderRadius: 10,
+                              background: canSelect ? 'rgba(48, 209, 88, 0.12)' : 'rgba(255, 69, 58, 0.12)',
+                              color: canSelect ? 'var(--accent-success)' : 'var(--accent-danger)'
+                            }}
+                          >
+                            {canSelect ? 'Eligible' : 'Conflict / Ineligible'}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: 11, color: canSelect ? 'var(--text-secondary)' : 'var(--accent-danger)', marginTop: 4, marginLeft: 16 }}>
+                          {judge.reason}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Optional Reason / Notes */}
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Reassignment Reason (Logged for Audit Trail)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., Evaluator had an emergency / hardware issue / stepped away"
+                value={reassignReason}
+                onChange={(e) => setReassignReason(e.target.value)}
+                className="apple-input"
+                style={{ width: '100%' }}
+              />
+            </div>
           </div>
         </Modal>
       )}

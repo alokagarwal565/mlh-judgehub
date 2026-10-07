@@ -181,7 +181,13 @@ router.post('/:eventId/sets/:setId/rank', authenticate, requireRole('JUDGE', 'AD
     }
 
     const numProjects = auth.set.projects.length;
-    const requiredRanks = Math.min(3, numProjects);
+    const isTieBreaker = auth.set.setNumber === 0;
+    // Fairness guard: In small sets (trimmed tail), only top max(1, numProjects - 2) earn points
+    // 5 projects -> 3 earn points (3, 2, 1; 2 get 0)
+    // 4 projects -> 2 earn points (3, 2; 2 get 0)
+    // 3 projects -> 1 earns points (3; 2 get 0)
+    const allowedPointSlots = isTieBreaker ? numProjects : Math.max(1, numProjects - 2);
+    const requiredRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
 
     if (!Array.isArray(rankings) || rankings.length < requiredRanks) {
       return res.status(400).json({ error: `At least ${requiredRanks} rankings required` });
@@ -196,7 +202,11 @@ router.post('/:eventId/sets/:setId/rank', authenticate, requireRole('JUDGE', 'AD
     }
 
     const judgeId = auth.judgeId!;
-    const pointsMap: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
+    const basePoints = [3, 2, 1];
+    const pointsMap: Record<number, number> = {};
+    for (let i = 0; i < allowedPointSlots; i++) {
+      pointsMap[i + 1] = basePoints[i] || 0;
+    }
 
     // ponytail: Atomic transaction prevents losing previous ranks if insertion fails
     await prisma.$transaction([

@@ -208,7 +208,7 @@ export async function findTiedProjects(eventId: string): Promise<string[][]> {
 }
 
 // ponytail: Helper to prevent CSV formula injection and correctly escape double quotes
-function escapeCsvField(val: string | number | boolean | null | undefined): string {
+export function escapeCsvField(val: string | number | boolean | null | undefined): string {
   if (val === null || val === undefined) return '""';
   let str = String(val);
   if (/^[=+\-@\t\r]/.test(str)) {
@@ -238,6 +238,6 @@ export function leaderboardToCsv(entries: LeaderboardEntry[]): string {
       e.isTied
     ].join(',')
   );
-  return [header, ...rows].join('\n');
+  return '\uFEFF' + [header, ...rows].join('\n');
 }
 

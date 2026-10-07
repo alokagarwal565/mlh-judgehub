@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { downloadBlobFile } from '../../services/download';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
 import PageHeader from '../../components/ui/PageHeader';
@@ -20,7 +21,8 @@ import {
   Trash2,
   Clock,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Download
 } from '../../components/ui/icons';
 
 export default function AdminJudges() {
@@ -136,6 +138,17 @@ export default function AdminJudges() {
     return `${m}m`;
   };
 
+  const handleExportCsv = async () => {
+    try {
+      const response = await api.get(`/events/${eventId}/export/judges`, { responseType: 'blob' });
+      const safeName = (activeEvent?.name || 'event').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      downloadBlobFile(response.data, `judges-master-${safeName}.csv`);
+      success('Judges master CSV exported successfully');
+    } catch (err) {
+      toastError('Failed to export judges master CSV');
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -143,6 +156,15 @@ export default function AdminJudges() {
         subtitle={`Evaluation staff & workload management for ${activeEvent?.name || 'event'}`}
         actions={
           <div style={{ display: 'flex', gap: 10 }}>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={Download}
+              onClick={handleExportCsv}
+              title="Export all judges as master CSV"
+            >
+              Export CSV
+            </Button>
             <Button
               variant="secondary"
               size="md"

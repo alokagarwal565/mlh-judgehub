@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -26,7 +26,8 @@ import {
   X,
   FileText,
   Eye,
-  User
+  User,
+  Sparkles
 } from '../../components/ui/icons';
 
 const CRITERIA = [
@@ -56,6 +57,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const timerRef = useRef(null);
   const [flagModal, setFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
+  const [absentModal, setAbsentModal] = useState(false);
+  const [absentNotes, setAbsentNotes] = useState('');
+  const [reportingAbsent, setReportingAbsent] = useState(false);
   const [projectFlags, setProjectFlags] = useState({});
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -120,6 +124,20 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
           const sortedVotes = [...setData.stackRankVotes].sort((a, b) => a.rank - b.rank);
           sortedVotes.slice(0, reqRanks).forEach((v, i) => {
             initialRankings[i] = v.projectId;
+          });
+        } else if (setData.scores?.length > 0) {
+          // Auto-calculate 1st, 2nd, 3rd from Phase 1 total marks
+          const scoreMap = {};
+          setData.scores.forEach((s) => {
+            scoreMap[s.projectId] = s.total;
+          });
+          const sortedProjects = [...setData.projects].sort((a, b) => {
+            const scoreA = scoreMap[a.project.id] ?? 0;
+            const scoreB = scoreMap[b.project.id] ?? 0;
+            return scoreB - scoreA;
+          });
+          sortedProjects.slice(0, reqRanks).forEach((sp, i) => {
+            initialRankings[i] = sp.project.id;
           });
         }
         setRankings(initialRankings);
@@ -213,6 +231,22 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const currentScore = getScore(currentProject?.id);
   const totalScore = currentScore.completion + currentScore.originality + currentScore.learning + currentScore.design + currentScore.technology;
 
+  // Check for score ties among projects in this set
+  const detectedTies = useMemo(() => {
+    const scoreMap = {};
+    projects.forEach((p) => {
+      const s = getScore(p.id);
+      const total = s.completion + s.originality + s.learning + s.design + s.technology;
+      if (total > 0) {
+        if (!scoreMap[total]) scoreMap[total] = [];
+        scoreMap[total].push(p.title);
+      }
+    });
+    return Object.entries(scoreMap)
+      .filter(([_, list]) => list.length > 1)
+      .map(([pts, list]) => ({ points: pts, teams: list }));
+  }, [projects, scores]);
+
   const formatTimer = (secs) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
@@ -261,6 +295,26 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       setCurrentIdx((prev) => prev + 1);
       setTimer(0);
     } else {
+      // Auto-calculate rankings from current rubric scores if not already set
+      setRankings((prev) => {
+        if (prev.some((r) => r !== null)) return prev;
+        const numProjects = projects.length;
+        const isTieBreaker = set?.setNumber === 0;
+        const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
+
+        const projectTotals = projects.map((p) => {
+          const s = getScore(p.id);
+          const total = (s.completion || 0) + (s.originality || 0) + (s.learning || 0) + (s.design || 0) + (s.technology || 0);
+          return { id: p.id, total };
+        });
+
+        projectTotals.sort((a, b) => b.total - a.total);
+        const autoRanks = Array(reqRanks).fill(null);
+        projectTotals.slice(0, reqRanks).forEach((pt, idx) => {
+          autoRanks[idx] = pt.id;
+        });
+        return autoRanks;
+      });
       setPhase('ranking');
     }
   };
@@ -332,6 +386,31 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       setFlagReason('');
     } catch (err) {
       toastError(err.response?.data?.error || 'Failed to submit flag');
+    }
+  };
+
+  const handleAbsentSubmit = async () => {
+    if (!currentProject) return;
+    setReportingAbsent(true);
+    try {
+      const eventId = activeEvent?.id || set.eventId;
+      await api.post(`/events/${eventId}/projects/${currentProject.id}/absence`, {
+        setId: set.id,
+        notes: absentNotes
+      });
+      success(`Reported ${currentProject.title} as absent. Floor desk notified.`);
+      setAbsentModal(false);
+      setAbsentNotes('');
+      if (currentIdx < projects.length - 1) {
+        setCurrentIdx((prev) => prev + 1);
+        setTimer(0);
+      } else {
+        setPhase('ranking');
+      }
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to report absence');
+    } finally {
+      setReportingAbsent(false);
     }
   };
 
@@ -458,15 +537,29 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
               title={currentProject?.title}
               subtitle={`Team: ${currentProject?.team?.name || 'Unknown'} • Room ${currentProject?.roomNumber || 'TBD'}`}
               action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={Flag}
-                  onClick={() => setFlagModal(true)}
-                  style={{ color: 'var(--accent-danger)' }}
-                >
-                  Flag
-                </Button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {!readonly && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={AlertTriangle}
+                      onClick={() => setAbsentModal(true)}
+                      style={{ color: 'var(--accent-warning)', borderColor: 'rgba(234, 179, 8, 0.3)' }}
+                      title="Report team not at their assigned table"
+                    >
+                      Team Absent
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={Flag}
+                    onClick={() => setFlagModal(true)}
+                    style={{ color: 'var(--accent-danger)' }}
+                  >
+                    Flag
+                  </Button>
+                </div>
               }
             >
               <div style={{ marginBottom: 16 }}>
@@ -612,12 +705,63 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         /* Phase 2: Priority Stack Ranking */
         <Card
           title="Stack Rank Top Projects"
-          subtitle="Assign priority ranks for Borda count scoring (1st = 3 pts, 2nd = 2 pts, 3rd = 1 pt)"
+          subtitle={`Assign priority ranks for final scoring. Projects in this set: ${projects.length}.`}
         >
           <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Auto-Calculation Notification */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+                padding: '12px 16px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--font-size-sm)'
+              }}
+            >
+              <Sparkles size={18} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <strong style={{ color: 'var(--accent)' }}>Auto-Calculated from Rubric: </strong>
+                Rankings have been pre-sorted according to each team's Phase 1 rubric total. You can review, modify, or swap any position below before finalizing.
+              </div>
+            </div>
+
+            {/* Tie Detection Warning */}
+            {detectedTies.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  color: 'var(--text-primary)',
+                  fontSize: 'var(--font-size-sm)'
+                }}
+              >
+                <AlertTriangle size={18} style={{ color: '#eab308', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong style={{ color: '#eab308' }}>Rubric Score Tie Detected: </strong>
+                  {detectedTies.map((t, idx) => (
+                    <span key={idx}>
+                      {t.teams.join(' and ')} are tied at {t.points}/50 marks.
+                    </span>
+                  ))}{' '}
+                  Please verify your preferred tie-break ordering.
+                </div>
+              </div>
+            )}
+
             {rankings.map((selectedId, rIdx) => {
-              const rankLabels = ['🥇 1st Place (3 Points)', '🥈 2nd Place (2 Points)', '🥉 3rd Place (1 Point)'];
-              const label = rankLabels[rIdx] || `Rank #${rIdx + 1}`;
+              const allowedPointSlots = Math.max(1, projects.length - 2);
+              const points = rIdx < allowedPointSlots ? (3 - rIdx) : 0;
+              const placeNames = ['🥇 1st Place', '🥈 2nd Place', '🥉 3rd Place'];
+              const label = `${placeNames[rIdx] || `Rank #${rIdx + 1}`} (${points > 0 ? `+${points} Points` : '0 Points — Normalized for set size'})`;
 
               return (
                 <div
@@ -694,6 +838,40 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
           </div>
         </Card>
       )}
+
+      {/* Report Absent Modal */}
+      <Modal
+        isOpen={absentModal}
+        onClose={() => setAbsentModal(false)}
+        title={`Report Team Absent: ${currentProject?.title}`}
+        subtitle="Team not found at assigned table during judging rounds"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAbsentModal(false)}>Cancel</Button>
+            <Button
+              variant="warning"
+              onClick={handleAbsentSubmit}
+              loading={reportingAbsent}
+            >
+              Report Absent & Skip
+            </Button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Marking this team as absent will alert the floor organizer desk to call the team leader (<strong style={{ color: 'var(--text-primary)' }}>{currentProject?.leaderName || 'Lead'}</strong>, Room <strong style={{ color: 'var(--text-primary)' }}>{currentProject?.roomNumber || 'TBD'}</strong>). They will be scheduled for a 2nd attempt.
+          </div>
+          <textarea
+            value={absentNotes}
+            onChange={(e) => setAbsentNotes(e.target.value)}
+            placeholder="Optional notes (e.g. Visited table twice, laptops closed, no team members present)..."
+            rows={3}
+            className="apple-input"
+            style={{ resize: 'vertical' }}
+          />
+        </div>
+      </Modal>
 
       {/* Flag Project Modal */}
       <Modal

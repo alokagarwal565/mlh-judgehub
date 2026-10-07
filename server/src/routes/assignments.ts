@@ -32,16 +32,21 @@ router.get('/:eventId/assignments', authenticate, requireActiveEvent, async (req
           },
           orderBy: { sortOrder: 'asc' }
         },
-        scores: { select: { projectId: true, timeSpentSeconds: true } }
+        scores: { select: { projectId: true, timeSpentSeconds: true, createdAt: true } }
       },
       orderBy: [{ column: 'asc' }, { setNumber: 'asc' }]
     });
 
-    // Enriched response for judge recent tracking
+    // Enriched response for judge recent tracking & duration telemetry
     const enriched = sets.map(set => {
       let recentLocation = null;
       let locationStatus = null; // 'ACTIVE' | 'LAST'
       let activeProjectId = null;
+
+      const totalTimeSpentSeconds = set.scores.reduce((sum, s) => sum + (s.timeSpentSeconds || 0), 0);
+      const lastActiveTimestamp = set.scores.length > 0
+        ? Math.max(...set.scores.map(s => new Date(s.createdAt).getTime()))
+        : new Date(set.createdAt).getTime();
 
       if ((set.status === 'IN_PROGRESS' || set.status === 'COMPLETED') && set.projects.length > 0) {
         const scoredIds = new Set(set.scores.map(s => s.projectId));
@@ -62,7 +67,14 @@ router.get('/:eventId/assignments', authenticate, requireActiveEvent, async (req
           activeProjectId = null;
         }
       }
-      return { ...set, recentLocation, locationStatus, activeProjectId };
+      return {
+        ...set,
+        recentLocation,
+        locationStatus,
+        activeProjectId,
+        totalTimeSpentSeconds,
+        lastActiveAt: new Date(lastActiveTimestamp).toISOString()
+      };
     });
 
     res.json(enriched);
@@ -360,6 +372,200 @@ router.post('/:eventId/assignments/unassign', authenticate, requireActiveEvent, 
     }
 
     res.json({ message: 'Judge unassigned successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/events/:eventId/assignments/:setId/eligible-judges
+// Admin views eligible replacement judges for an incomplete set
+router.get('/:eventId/assignments/:setId/eligible-judges', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { eventId, setId } = req.params;
+
+    const set = await prisma.judgeSet.findUnique({
+      where: { id: setId },
+      include: {
+        projects: {
+          include: { project: { select: { id: true, title: true, team: { select: { name: true } } } } }
+        },
+        judge: { select: { id: true, name: true } }
+      }
+    });
+
+    if (!set) return res.status(404).json({ error: 'Set not found' });
+    if (set.eventId !== eventId) return res.status(400).json({ error: 'Set does not belong to this event' });
+
+    // Get all judges in this event
+    const allJudges = await prisma.user.findMany({
+      where: {
+        role: 'JUDGE',
+        judgeSets: { some: { eventId } }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        judgeSets: {
+          where: { eventId },
+          include: {
+            projects: { select: { projectId: true } }
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    const candidateJudges = allJudges
+      .filter(j => j.id !== set.judgeId) // Exclude current judge
+      .map(judge => {
+        const inProgressSet = judge.judgeSets.find(s => s.status === 'IN_PROGRESS' && s.id !== setId);
+        const completedSetsCount = judge.judgeSets.filter(s => s.status === 'COMPLETED').length;
+
+        // Check if judge evaluated any project from this set
+        const evaluatedProjectIds = new Set(
+          judge.judgeSets
+            .filter(s => s.status === 'COMPLETED' || s.status === 'IN_PROGRESS')
+            .flatMap(s => s.projects.map(p => p.projectId))
+        );
+
+        const overlappingProjects = set.projects.filter(p => evaluatedProjectIds.has(p.projectId));
+
+        let isEligible = true;
+        let reason = 'Eligible for assignment';
+
+        if (inProgressSet) {
+          isEligible = false;
+          reason = `Currently active on Set #${inProgressSet.setNumber}`;
+        } else if (overlappingProjects.length > 0) {
+          isEligible = false;
+          const names = overlappingProjects.map(p => p.project.title).join(', ');
+          reason = `Already evaluated project(s): ${names}`;
+        }
+
+        return {
+          id: judge.id,
+          name: judge.name,
+          email: judge.email,
+          phone: judge.phone,
+          isEligible,
+          reason,
+          completedSetsCount
+        };
+      });
+
+    res.json({
+      set: {
+        id: set.id,
+        setNumber: set.setNumber,
+        column: set.column,
+        currentJudge: set.judge,
+        projectsCount: set.projects.length
+      },
+      judges: candidateJudges
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/events/:eventId/assignments/reassign
+// Admin safely reassigns an incomplete set to another eligible judge
+router.post('/:eventId/assignments/reassign', authenticate, requireActiveEvent, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { setId, newJudgeId, reason } = req.body;
+
+    if (!setId || !newJudgeId) {
+      return res.status(400).json({ error: 'setId and newJudgeId are required' });
+    }
+
+    const set = await prisma.judgeSet.findUnique({
+      where: { id: setId },
+      include: {
+        projects: { select: { projectId: true } },
+        judge: { select: { id: true, name: true } }
+      }
+    });
+
+    if (!set) return res.status(404).json({ error: 'Set not found' });
+    if (set.eventId !== eventId) return res.status(400).json({ error: 'Set does not belong to this event' });
+    if (set.status === 'COMPLETED') {
+      return res.status(400).json({ error: 'Cannot reassign a completed set' });
+    }
+
+    // Verify replacement judge exists
+    const replacementJudge = await prisma.user.findUnique({
+      where: { id: newJudgeId }
+    });
+    if (!replacementJudge || replacementJudge.role !== 'JUDGE') {
+      return res.status(400).json({ error: 'Invalid replacement judge' });
+    }
+
+    // Verify replacement judge does not have an active in-progress set
+    const activeSet = await prisma.judgeSet.findFirst({
+      where: { eventId, judgeId: newJudgeId, status: 'IN_PROGRESS', id: { not: setId } }
+    });
+    if (activeSet) {
+      return res.status(409).json({ error: `Replacement judge ${replacementJudge.name} is currently active on Set #${activeSet.setNumber}` });
+    }
+
+    // Verify replacement judge has no project overlaps
+    const previousSets = await prisma.judgeSet.findMany({
+      where: { eventId, judgeId: newJudgeId, setNumber: { gte: 0 }, status: { in: ['IN_PROGRESS', 'COMPLETED'] } },
+      include: { projects: { select: { projectId: true } } }
+    });
+    const evaluatedIds = new Set(previousSets.flatMap(s => s.projects.map(p => p.projectId)));
+    const hasOverlap = set.projects.some(p => evaluatedIds.has(p.projectId));
+    if (hasOverlap) {
+      return res.status(409).json({ error: `Replacement judge ${replacementJudge.name} has already evaluated projects in this set` });
+    }
+
+    const prevJudgeName = set.judge?.name || 'Unassigned';
+
+    // Atomic transaction: clean partial evaluations, reassign judge, update status
+    await prisma.$transaction([
+      prisma.score.deleteMany({ where: { setId } }),
+      prisma.stackRankVote.deleteMany({ where: { setId } }),
+      prisma.trackNomination.deleteMany({ where: { setId } }),
+      prisma.feedback.deleteMany({ where: { setId } }),
+      prisma.editRequest.deleteMany({ where: { setId } }),
+      prisma.judgeSet.update({
+        where: { id: setId },
+        data: {
+          judgeId: newJudgeId,
+          status: 'IN_PROGRESS'
+        }
+      })
+    ]);
+
+    // Update project judging status
+    const { updateProjectJudgingStatus } = await import('../engine/assignment.js');
+    for (const p of set.projects) {
+      await updateProjectJudgingStatus(p.projectId);
+    }
+
+    const io = req.app.get('io');
+    const progress = await getAssignmentProgress(eventId);
+    if (io) {
+      io.to(`event:${eventId}`).emit('judging:progress', { eventId, ...progress });
+      io.to(`event:${eventId}`).emit('set:reassigned', {
+        setId,
+        setNumber: set.setNumber,
+        previousJudge: prevJudgeName,
+        newJudge: replacementJudge.name,
+        reason: reason || 'Admin reassignment'
+      });
+    }
+
+    console.log(`[Audit] Reassigned Set #${set.setNumber} from ${prevJudgeName} to ${replacementJudge.name}. Reason: ${reason || 'N/A'}`);
+
+    res.json({
+      message: `Set #${set.setNumber} successfully reassigned to ${replacementJudge.name}`,
+      previousJudge: prevJudgeName,
+      newJudge: replacementJudge.name
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

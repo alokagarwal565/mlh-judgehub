@@ -28,7 +28,8 @@ const corsOptions: cors.CorsOptions = {
     return callback(new Error('CORS not allowed for this origin'));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  exposedHeaders: ['Content-Disposition']
 };
 
 const app = express();

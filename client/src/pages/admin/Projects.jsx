@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
+import { downloadBlobFile } from '../../services/download';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
@@ -23,7 +24,8 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertTriangle,
-  Award
+  Award,
+  Phone
 } from '../../components/ui/icons';
 
 export default function AdminProjects() {
@@ -93,6 +95,8 @@ export default function AdminProjects() {
     };
   }, [socket, eventId]);
 
+  const absentCount = projects.filter((p) => p.flags?.some((f) => f.reason?.includes('[ABSENT]'))).length;
+
   const filtered = projects.filter((p) => {
     const matchSearch =
       p.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -101,9 +105,30 @@ export default function AdminProjects() {
       p.roomNumber?.toString().includes(search) ||
       p.leaderName?.toLowerCase().includes(search.toLowerCase());
 
-    const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
+    let matchStatus = true;
+    if (statusFilter === 'ABSENT') {
+      matchStatus = p.flags?.some((f) => f.reason?.includes('[ABSENT]'));
+    } else if (statusFilter !== 'ALL') {
+      matchStatus = p.status === statusFilter;
+    }
     return matchSearch && matchStatus;
   });
+
+  const handleFinalizeAbsent = async (project) => {
+    if (!window.confirm(`Mark ${project.title} as absent for 2nd attempt? This applies a default floor score of 0 so judging rounds are not blocked.`)) {
+      return;
+    }
+    try {
+      await api.post(`/events/${eventId}/projects/${project.id}/absence`, {
+        isFinalAbsent: true,
+        notes: 'Final 2nd attempt absence recorded by admin.'
+      });
+      success(`Marked ${project.title} as absent (Floor score 0 applied)`);
+      fetchProjects();
+    } catch (err) {
+      toastError(err.response?.data?.error || 'Failed to finalize absence');
+    }
+  };
 
   const { paged, totalPages, total } = usePagination(filtered, page, perPage);
 
@@ -190,7 +215,21 @@ export default function AdminProjects() {
     }
   };
 
-  const getStatusBadge = (status) => {
+  const handleExportCsv = async () => {
+    try {
+      const response = await api.get(`/events/${eventId}/export/projects`, { responseType: 'blob' });
+      const safeName = (activeEvent?.name || 'event').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      downloadBlobFile(response.data, `projects-master-${safeName}.csv`);
+      success('Projects master CSV exported successfully');
+    } catch (err) {
+      toastError('Failed to export projects master CSV');
+    }
+  };
+
+  const getStatusBadge = (status, project) => {
+    if (project?.flags?.some((f) => f.reason?.includes('[ABSENT]'))) {
+      return <Badge variant="warning" dot pulse>Absent at Table</Badge>;
+    }
     if (status === 'FLAGGED') return <Badge variant="danger" dot>Flagged</Badge>;
     if (status === 'SCORED') return <Badge variant="success">Scored</Badge>;
     if (status === 'UNDER_REVIEW') return <Badge variant="warning" dot pulse>In Judging</Badge>;
@@ -204,6 +243,15 @@ export default function AdminProjects() {
         subtitle={`Directory of all ${projects.length} submissions for ${activeEvent?.name || 'event'}`}
         actions={
           <div style={{ display: 'flex', gap: 10 }}>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={Download}
+              onClick={handleExportCsv}
+              title="Export all projects as master CSV"
+            >
+              Export CSV
+            </Button>
             <Button
               variant="secondary"
               size="md"
@@ -241,6 +289,7 @@ export default function AdminProjects() {
             width={180}
             options={[
               { value: 'ALL', label: `All Statuses (${projects.length})` },
+              { value: 'ABSENT', label: `⚠️ Absent at Table (${absentCount})`, color: '#ff9f0a' },
               { value: 'SUBMITTED', label: 'Submitted' },
               { value: 'UNDER_REVIEW', label: 'In Judging' },
               { value: 'SCORED', label: 'Scored' },
@@ -261,7 +310,7 @@ export default function AdminProjects() {
                 <th>Team & Leader</th>
                 <th>Location</th>
                 <th>Status</th>
-                <th style={{ width: 140, textAlign: 'right' }}>Actions</th>
+                <th style={{ width: 160, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -276,60 +325,90 @@ export default function AdminProjects() {
                   </td>
                 </tr>
               ) : (
-                paged.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <span className="tabular-nums" style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        {p.teamNumber ? `#${p.teamNumber}` : '—'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.title}</div>
-                      {p.demoLink && (
-                        <a
-                          href={p.demoLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2 }}
-                        >
-                          <ExternalLink size={10} /> Demo Link
-                        </a>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ color: 'var(--text-primary)' }}>{p.team?.name || '—'}</div>
-                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
-                        {p.leaderName || p.team?.email || '—'}
-                      </div>
-                    </td>
-                    <td>
-                      {p.roomNumber ? (
-                        <span className="apple-badge apple-badge-default apple-badge-sm">
-                          Room {p.roomNumber}
+                paged.map((p) => {
+                  const isAbsent = p.flags?.some((f) => f.reason?.includes('[ABSENT]'));
+
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <span className="tabular-nums" style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {p.teamNumber ? `#${p.teamNumber}` : '—'}
                         </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>—</span>
-                      )}
-                    </td>
-                    <td>{getStatusBadge(p.status)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        <button
-                          type="button"
-                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
-                          onClick={() => handleShowDetails(p.id)}
-                          title="View Details"
-                        >
-                          <Eye size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
-                          onClick={() => openEditModal(p)}
-                          title="Edit Project"
-                        >
-                          <Edit3 size={14} />
-                        </button>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.title}</div>
+                        {p.demoLink && (
+                          <a
+                            href={p.demoLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2 }}
+                          >
+                            <ExternalLink size={10} /> Demo Link
+                          </a>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{p.team?.name || '—'}</div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+                          <span>{p.leaderName || p.team?.email || '—'}</span>
+                          {p.team?.phone && (
+                            <a
+                              href={`tel:${p.team.phone}`}
+                              style={{
+                                color: 'var(--accent)',
+                                textDecoration: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontWeight: 500
+                              }}
+                              title="Call team lead to confirm table location"
+                            >
+                              <Phone size={11} /> {p.team.phone}
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        {p.roomNumber ? (
+                          <span className="apple-badge apple-badge-default apple-badge-sm">
+                            Room {p.roomNumber}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>—</span>
+                        )}
+                      </td>
+                      <td>{getStatusBadge(p.status, p)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {isAbsent && (
+                            <button
+                              type="button"
+                              className="apple-btn apple-btn-secondary apple-btn-xs"
+                              onClick={() => handleFinalizeAbsent(p)}
+                              style={{ color: 'var(--accent-warning)', borderColor: 'rgba(234, 179, 8, 0.3)', padding: '2px 6px', fontSize: 10, height: 24 }}
+                              title="Assign default floor score 0 if team is absent on 2nd attempt"
+                            >
+                              Floor 0
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                            onClick={() => handleShowDetails(p.id)}
+                            title="View Details"
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
+                            onClick={() => openEditModal(p)}
+                            title="Edit Project / Update Table Location"
+                          >
+                            <Edit3 size={14} />
+                          </button>
                         <button
                           type="button"
                           className="apple-btn-icon-only apple-btn-ghost apple-btn-sm"
@@ -342,8 +421,9 @@ export default function AdminProjects() {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })
+            )}
             </tbody>
           </table>
         </div>

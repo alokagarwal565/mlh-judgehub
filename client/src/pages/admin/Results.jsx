@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
+import { downloadBlobFile } from '../../services/download';
 import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
 import { useActiveEvent } from '../../context/ActiveEventContext';
@@ -136,16 +137,24 @@ export default function AdminResults() {
       const response = await api.get(`/events/${eventId}/results/export?${params.toString()}`, {
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `leaderboard-${activeEvent?.name || 'event'}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const safeName = (activeEvent?.name || 'event').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      downloadBlobFile(response.data, `leaderboard-${safeName}.csv`);
       success('Leaderboard CSV exported successfully');
     } catch (err) {
       toastError('Failed to export CSV');
+    }
+  };
+
+  const handleExportScoresCsv = async () => {
+    try {
+      const response = await api.get(`/events/${eventId}/export/scores`, {
+        responseType: 'blob'
+      });
+      const safeName = (activeEvent?.name || 'event').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      downloadBlobFile(response.data, `evaluations-master-${safeName}.csv`);
+      success('Evaluations master CSV exported successfully');
+    } catch (err) {
+      toastError('Failed to export evaluations CSV');
     }
   };
 
@@ -235,12 +244,22 @@ export default function AdminResults() {
               Refresh
             </Button>
             <Button
+              variant="secondary"
+              size="md"
+              icon={Download}
+              onClick={handleExportScoresCsv}
+              title="Export granular rubric scores and judge evaluations CSV"
+            >
+              Export Rubrics CSV
+            </Button>
+            <Button
               variant="primary"
               size="md"
               icon={Download}
               onClick={handleExportCsv}
+              title="Export authoritative leaderboard and stack points ranking"
             >
-              Export CSV
+              Export Leaderboard CSV
             </Button>
           </div>
         }
