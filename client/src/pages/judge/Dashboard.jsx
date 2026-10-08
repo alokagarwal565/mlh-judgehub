@@ -85,7 +85,9 @@ export default function JudgeDashboard({ isAdminView }) {
         .then((r) => {
           const map = {};
           (r.data || []).forEach((f) => {
-            map[f.projectId] = f;
+            if (!f.reason?.startsWith('[ABSENT')) {
+              map[f.projectId] = f;
+            }
           });
           setUserFlags(map);
         })

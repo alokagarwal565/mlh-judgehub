@@ -10,10 +10,11 @@ export function Badge({
   className = '',
   ...props
 }) {
+  const iconSize = size === 'xs' ? 11 : size === 'sm' ? 13 : 15;
   return (
     <span className={`apple-badge apple-badge-${variant} apple-badge-${size} ${className}`} {...props}>
       {dot && <span className={`apple-badge-dot ${pulse ? 'is-pulse' : ''}`} aria-hidden="true" />}
-      {Icon && <Icon size={size === 'sm' ? 14 : 16} className="apple-badge-icon" />}
+      {Icon && <Icon size={iconSize} className="apple-badge-icon" />}
       <span>{children}</span>
     </span>
   );

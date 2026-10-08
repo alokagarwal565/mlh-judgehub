@@ -260,7 +260,10 @@ export const Clock = createIcon(
 );
 
 export const Flag = createIcon(
-  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
+  <>
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" fill="currentColor" fillOpacity="0.35" />
+    <line x1="4" y1="22" x2="4" y2="15" />
+  </>
 );
 
 export const Award = createIcon(

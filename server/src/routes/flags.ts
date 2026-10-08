@@ -12,8 +12,10 @@ router.get('/:eventId/flags', authenticate, requireActiveEvent, requireRole('JUD
     const where: any = { eventId: req.params.eventId };
     if (req.user!.role === 'JUDGE') {
       where.flaggedBy = req.user!.userId;
+      where.NOT = { reason: { startsWith: '[ABSENT' } };
     } else if (req.query.judgeId) {
       where.flaggedBy = String(req.query.judgeId);
+      where.NOT = { reason: { startsWith: '[ABSENT' } };
     }
 
     const flags = await prisma.flag.findMany({

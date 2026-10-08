@@ -230,6 +230,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         if (isMounted && flagsRes.status === 'fulfilled') {
           const flagsByProject = {};
           for (const flag of flagsRes.value.data) {
+            if (flag.reason?.startsWith('[ABSENT')) continue;
             if (!flagsByProject[flag.projectId]) flagsByProject[flag.projectId] = [];
             flagsByProject[flag.projectId].push(flag);
           }
@@ -694,8 +695,10 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'flex-start',
                     justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 10,
                     padding: '10px 14px',
                     marginBottom: 16,
                     borderRadius: 'var(--radius-sm)',
@@ -705,9 +708,11 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                     fontSize: 'var(--font-size-xs)'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Flag size={13} />
-                    <span><strong>Flagged by you:</strong> {projectFlags[currentProject.id][0]?.reason || 'Flagged for organizer review'}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: '1 1 200px', minWidth: 0, wordBreak: 'break-word' }}>
+                    <Flag size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ minWidth: 0, wordBreak: 'break-word', lineHeight: 1.5 }}>
+                      <strong>Flagged by you:</strong> {projectFlags[currentProject.id][0]?.reason || 'Flagged for organizer review'}
+                    </span>
                   </div>
                   {!readonly && (
                     <button
@@ -724,7 +729,9 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                         fontSize: 'var(--font-size-xs)',
                         cursor: 'pointer',
                         fontWeight: 600,
-                        padding: 0
+                        padding: 0,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
                       }}
                     >
                       Edit Reason
@@ -1012,14 +1019,16 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                       style={{
                         marginTop: 8,
                         display: 'flex',
-                        alignItems: 'center',
+                        alignItems: 'flex-start',
                         gap: 6,
                         fontSize: 'var(--font-size-xs)',
                         color: 'var(--accent-danger)'
                       }}
                     >
-                      <Flag size={12} />
-                      <span>Note: You flagged this project ({projectFlags[selectedId][0]?.reason || 'Flagged for organizer review'})</span>
+                      <Flag size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <span style={{ minWidth: 0, wordBreak: 'break-word', lineHeight: 1.5 }}>
+                        Note: You flagged this project ({projectFlags[selectedId][0]?.reason || 'Flagged for organizer review'})
+                      </span>
                     </div>
                   )}
                 </div>

@@ -512,8 +512,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 18px 24px;
   gap: 12px;
+}
+
+.apple-card-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .apple-card-header.has-border {
@@ -821,6 +829,11 @@ body {
   white-space: nowrap;
 }
 
+.apple-badge-xs {
+  font-size: 10px;
+  padding: 2px 7px;
+  gap: 4px;
+}
 .apple-badge-sm {
   font-size: var(--font-size-2xs);
   padding: 3px 8px;
@@ -1502,6 +1515,22 @@ body {
   .apple-stats-grid {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .apple-card-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .apple-card-action {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .apple-card-body {
+    padding: 16px;
   }
 }
 
