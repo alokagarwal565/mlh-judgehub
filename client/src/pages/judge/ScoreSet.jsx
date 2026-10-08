@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -258,6 +258,55 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
     return () => clearInterval(timerRef.current);
   }, [readonly]);
 
+  const projects = useMemo(() => {
+    if (!set?.projects) return [];
+    return set.projects.map((sp) => sp.project || sp).filter(Boolean);
+  }, [set]);
+
+  const currentProject = projects[currentIdx] || null;
+
+  const getScore = useCallback((projectId) => {
+    return scores[projectId] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+  }, [scores]);
+
+  // Check for score ties among projects in this set (unconditionally rendered hook)
+  const detectedTies = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const scoreMap = {};
+    projects.forEach((p) => {
+      if (!p) return;
+      const s = scores[p.id] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+      const total = (s.completion || 0) + (s.originality || 0) + (s.learning || 0) + (s.design || 0) + (s.technology || 0);
+      if (total > 0) {
+        if (!scoreMap[total]) scoreMap[total] = [];
+        scoreMap[total].push(p.title || 'Untitled');
+      }
+    });
+    return Object.entries(scoreMap)
+      .filter(([_, list]) => list.length > 1)
+      .map(([pts, list]) => ({ points: pts, teams: list }));
+  }, [projects, scores]);
+
+  const updateScoreField = (field, val) => {
+    if (readonly || !currentProject) return;
+    setScores((prev) => ({
+      ...prev,
+      [currentProject.id]: {
+        ...getScore(currentProject.id),
+        [field]: Number(val),
+      },
+    }));
+  };
+
+  const currentScore = getScore(currentProject?.id);
+  const totalScore = (currentScore.completion || 0) + (currentScore.originality || 0) + (currentScore.learning || 0) + (currentScore.design || 0) + (currentScore.technology || 0);
+
+  const formatTimer = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   if (!set) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -280,49 +329,6 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
       </div>
     );
   }
-
-  const projects = set.projects.map((sp) => sp.project);
-  const currentProject = projects[currentIdx];
-
-  const getScore = (projectId) => {
-    return scores[projectId] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
-  };
-
-  const updateScoreField = (field, val) => {
-    if (readonly || !currentProject) return;
-    setScores((prev) => ({
-      ...prev,
-      [currentProject.id]: {
-        ...getScore(currentProject.id),
-        [field]: Number(val),
-      },
-    }));
-  };
-
-  const currentScore = getScore(currentProject?.id);
-  const totalScore = currentScore.completion + currentScore.originality + currentScore.learning + currentScore.design + currentScore.technology;
-
-  // Check for score ties among projects in this set
-  const detectedTies = useMemo(() => {
-    const scoreMap = {};
-    projects.forEach((p) => {
-      const s = getScore(p.id);
-      const total = s.completion + s.originality + s.learning + s.design + s.technology;
-      if (total > 0) {
-        if (!scoreMap[total]) scoreMap[total] = [];
-        scoreMap[total].push(p.title);
-      }
-    });
-    return Object.entries(scoreMap)
-      .filter(([_, list]) => list.length > 1)
-      .map(([pts, list]) => ({ points: pts, teams: list }));
-  }, [projects, scores]);
-
-  const formatTimer = (secs) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
 
   const saveCurrentProjectScore = async () => {
     if (readonly || !currentProject) return;
