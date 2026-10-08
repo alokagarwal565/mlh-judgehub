@@ -92,7 +92,7 @@ export default function AdminSetDetail() {
   const projects = set?.projects?.map(sp => sp.project) || [];
   const currentProject = projects[currentIdx];
 
-  const getScore = (projectId) => scores[projectId] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+  const getScore = (projectId) => scores[projectId] || { completion: 0, originality: 0, learning: 0, design: 0, technology: 0 };
 
   const updateScore = (projectId, field, value) => {
     setScores(prev => ({

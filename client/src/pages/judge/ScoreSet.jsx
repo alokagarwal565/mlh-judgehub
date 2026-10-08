@@ -266,7 +266,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const currentProject = projects[currentIdx] || null;
 
   const getScore = useCallback((projectId) => {
-    return scores[projectId] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+    return scores[projectId] || { completion: 0, originality: 0, learning: 0, design: 0, technology: 0 };
   }, [scores]);
 
   // Check for score ties among projects in this set (unconditionally rendered hook)
@@ -275,7 +275,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
     const scoreMap = {};
     projects.forEach((p) => {
       if (!p) return;
-      const s = scores[p.id] || { completion: 5, originality: 5, learning: 5, design: 5, technology: 5 };
+      const s = scores[p.id] || { completion: 0, originality: 0, learning: 0, design: 0, technology: 0 };
       const total = (s.completion || 0) + (s.originality || 0) + (s.learning || 0) + (s.design || 0) + (s.technology || 0);
       if (total > 0) {
         if (!scoreMap[total]) scoreMap[total] = [];

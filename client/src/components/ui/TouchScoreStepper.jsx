@@ -5,7 +5,7 @@ import React from 'react';
  * Uses native Apple design tokens and smooth micro-steppers + slider
  */
 export default function TouchScoreStepper({
-  value = 5,
+  value = 0,
   onChange,
   disabled = false,
   label,
