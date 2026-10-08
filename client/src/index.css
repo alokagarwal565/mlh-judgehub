@@ -1532,6 +1532,18 @@ body {
   .apple-card-body {
     padding: 16px;
   }
+
+  .judge-step-actions {
+    flex-direction: column-reverse;
+    gap: 10px !important;
+  }
+
+  .judge-step-actions > button,
+  .judge-step-actions > div,
+  .judge-step-actions > div > button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

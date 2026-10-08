@@ -275,8 +275,9 @@ export function Select({
               ? { bottom: 'calc(100% + 4px)', top: 'auto', animation: 'appleSelectFadeInUp 0.15s cubic-bezier(0.16, 1, 0.3, 1)' }
               : { top: 'calc(100% + 4px)', bottom: 'auto', animation: 'appleSelectFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)' }),
             left: 0,
-            minWidth: '100%',
-            maxWidth: '360px',
+            right: 0,
+            width: '100%',
+            boxSizing: 'border-box',
             maxHeight: 260,
             overflowY: 'auto',
             background: 'rgba(24, 26, 34, 0.97)',
@@ -331,7 +332,7 @@ export function Select({
                     opacity: opt.disabled ? 0.45 : 1
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', minWidth: 0, flex: 1 }}>
                     {opt.color && (
                       <span
                         style={{

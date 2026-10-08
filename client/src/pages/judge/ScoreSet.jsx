@@ -893,7 +893,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
             </div>
 
             {/* Stepper Navigation Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 12 }}>
+            <div className="judge-step-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 12 }}>
               <Button
                 variant="secondary"
                 size="md"
@@ -1036,7 +1036,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
             })}
 
             {/* Bottom Finalize Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 16 }}>
+            <div className="judge-step-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, gap: 16 }}>
               <Button
                 variant="secondary"
                 size="lg"
