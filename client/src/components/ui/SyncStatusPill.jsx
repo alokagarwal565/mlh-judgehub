@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { syncEngine } from '../../services/syncEngine';
 import { Check, AlertTriangle, Clock } from './icons';
 
-export default function SyncStatusPill({ className = '' }) {
+export default function SyncStatusPill({ className = '', style = {} }) {
   const [syncState, setSyncState] = useState(syncEngine.getState());
 
   useEffect(() => {
@@ -11,14 +11,34 @@ export default function SyncStatusPill({ className = '' }) {
 
   const { isOnline, isSyncing, pendingCount, lastError } = syncState;
 
+  const baseStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 12px',
+    borderRadius: 'var(--radius-pill)',
+    fontSize: 'var(--font-size-xs)',
+    fontWeight: 500,
+    userSelect: 'none',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+    transition: 'all 0.2s ease',
+    ...style
+  };
+
   if (isOnline && !isSyncing && pendingCount === 0 && !lastError) {
     return (
       <div
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 select-none ${className}`}
-        style={{ backdropFilter: 'blur(8px)' }}
+        className={className}
+        style={{
+          ...baseStyle,
+          background: 'rgba(48, 209, 88, 0.12)',
+          border: '1px solid rgba(48, 209, 88, 0.28)',
+          color: 'var(--accent-success)'
+        }}
         title="All changes synced with server"
       >
-        <Check className="w-3.5 h-3.5" />
+        <Check size={13} />
         <span>All synced</span>
       </div>
     );
@@ -27,11 +47,23 @@ export default function SyncStatusPill({ className = '' }) {
   if (!isOnline) {
     return (
       <div
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-amber-500/30 bg-amber-500/15 text-amber-300 select-none ${className}`}
-        style={{ backdropFilter: 'blur(8px)' }}
+        className={className}
+        style={{
+          ...baseStyle,
+          background: 'rgba(255, 214, 10, 0.12)',
+          border: '1px solid rgba(255, 214, 10, 0.3)',
+          color: 'var(--accent-warning)'
+        }}
         title="Device is offline. Changes are saved locally on this device."
       >
-        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: 'var(--accent-warning)'
+          }}
+        />
         <span>Offline · {pendingCount > 0 ? `${pendingCount} saved on device` : 'Local mode'}</span>
       </div>
     );
@@ -40,11 +72,23 @@ export default function SyncStatusPill({ className = '' }) {
   if (isSyncing) {
     return (
       <div
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-blue-500/30 bg-blue-500/15 text-blue-300 select-none ${className}`}
-        style={{ backdropFilter: 'blur(8px)' }}
+        className={className}
+        style={{
+          ...baseStyle,
+          background: 'rgba(10, 132, 255, 0.12)',
+          border: '1px solid rgba(10, 132, 255, 0.3)',
+          color: 'var(--accent)'
+        }}
         title="Syncing pending changes with server..."
       >
-        <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: 'var(--accent)'
+          }}
+        />
         <span>Syncing {pendingCount > 0 ? `${pendingCount} items...` : '...'}</span>
       </div>
     );
@@ -54,11 +98,17 @@ export default function SyncStatusPill({ className = '' }) {
     return (
       <button
         onClick={() => syncEngine.flushOutbox()}
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors cursor-pointer select-none ${className}`}
-        style={{ backdropFilter: 'blur(8px)' }}
+        className={className}
+        style={{
+          ...baseStyle,
+          background: 'rgba(255, 69, 58, 0.12)',
+          border: '1px solid rgba(255, 69, 58, 0.35)',
+          color: 'var(--accent-danger)',
+          cursor: 'pointer'
+        }}
         title="Click to retry synchronization"
       >
-        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+        <AlertTriangle size={13} />
         <span>Sync retry ({pendingCount})</span>
       </button>
     );
@@ -68,11 +118,17 @@ export default function SyncStatusPill({ className = '' }) {
     return (
       <button
         onClick={() => syncEngine.flushOutbox()}
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-blue-500/30 bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 transition-colors cursor-pointer select-none ${className}`}
-        style={{ backdropFilter: 'blur(8px)' }}
+        className={className}
+        style={{
+          ...baseStyle,
+          background: 'rgba(10, 132, 255, 0.12)',
+          border: '1px solid rgba(10, 132, 255, 0.3)',
+          color: 'var(--accent)',
+          cursor: 'pointer'
+        }}
         title="Click to flush sync outbox"
       >
-        <Clock className="w-3.5 h-3.5" />
+        <Clock size={13} />
         <span>{pendingCount} pending sync</span>
       </button>
     );

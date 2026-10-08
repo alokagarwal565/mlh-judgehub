@@ -652,27 +652,36 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
               subtitle={`Team: ${currentProject?.team?.name || 'Unknown'} • Room ${currentProject?.roomNumber || 'TBD'}`}
               action={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {!readonly && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={AlertTriangle}
-                      onClick={() => setAbsentModal(true)}
-                      style={{ color: 'var(--accent-warning)', borderColor: 'rgba(234, 179, 8, 0.3)' }}
-                      title="Report team not at their assigned table"
-                    >
-                      Team Absent
-                    </Button>
+                  {projectFlags[currentProject?.id] && (
+                    <Badge variant="danger" size="sm" icon={Flag}>
+                      Flagged
+                    </Badge>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={Flag}
-                    onClick={() => setFlagModal(true)}
-                    style={{ color: 'var(--accent-danger)' }}
-                  >
-                    Flag
-                  </Button>
+                  {!readonly && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={AlertTriangle}
+                        onClick={() => setAbsentModal(true)}
+                        style={{ color: 'var(--accent-warning)', borderColor: 'rgba(234, 179, 8, 0.3)' }}
+                        title="Report team not at their assigned table"
+                      >
+                        Team Absent
+                      </Button>
+                      {!projectFlags[currentProject?.id] && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Flag}
+                          onClick={() => setFlagModal(true)}
+                          style={{ color: 'var(--accent-danger)' }}
+                        >
+                          Flag
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
               }
             >
@@ -721,46 +730,91 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
 
             {/* Track Nominations */}
             {tracks.length > 0 && (
-              <Card title="Category Nominations" subtitle="Nominate this project for special track prizes">
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {tracks.map((t) => {
-                    const isNominated = (nominations[currentProject?.id] || []).includes(t.id);
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => toggleNomination(t.id)}
-                        disabled={readonly}
-                        className={`apple-badge apple-badge-md ${isNominated ? 'apple-badge-purple' : 'apple-badge-default'}`}
-                        style={{ cursor: readonly ? 'default' : 'pointer', border: '1px solid var(--border-subtle)' }}
-                      >
-                        <Award size={13} />
-                        <span>{t.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              <Card
+                title="Category Nominations"
+                subtitle={readonly ? "Nominated tracks for special prizes" : "Nominate this project for special track prizes"}
+              >
+                {readonly ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {tracks.filter((t) => (nominations[currentProject?.id] || []).includes(t.id)).length > 0 ? (
+                      tracks
+                        .filter((t) => (nominations[currentProject?.id] || []).includes(t.id))
+                        .map((t) => (
+                          <span
+                            key={t.id}
+                            className="apple-badge apple-badge-purple apple-badge-md"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <Award size={13} />
+                            <span>{t.name}</span>
+                          </span>
+                        ))
+                    ) : (
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                        No category nominations recorded for this project.
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {tracks.map((t) => {
+                      const isNominated = (nominations[currentProject?.id] || []).includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => toggleNomination(t.id)}
+                          className={`apple-badge apple-badge-md ${isNominated ? 'apple-badge-purple' : 'apple-badge-default'}`}
+                          style={{ cursor: 'pointer', border: '1px solid var(--border-subtle)' }}
+                        >
+                          <Award size={13} />
+                          <span>{t.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </Card>
             )}
 
             {/* Judge Private Notes */}
-            <Card title="Private Notes & Feedback" subtitle="Constructive comments for organizers or participants">
-              <textarea
-                value={feedback[currentProject?.id] || ''}
-                onChange={(e) => setFeedback({ ...feedback, [currentProject.id]: e.target.value })}
-                disabled={readonly}
-                placeholder="Write specific feedback on technical strengths, UI polish, or suggestions..."
-                rows={3}
-                className="apple-input"
-                style={{ resize: 'vertical' }}
-              />
+            <Card
+              title="Private Notes & Feedback"
+              subtitle={readonly ? "Evaluator's recorded feedback" : "Constructive comments for organizers or participants"}
+            >
+              {readonly ? (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    color: feedback[currentProject?.id] ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    fontSize: 'var(--font-size-sm)',
+                    fontStyle: feedback[currentProject?.id] ? 'normal' : 'italic',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {feedback[currentProject?.id] || 'No private notes or feedback recorded for this project.'}
+                </div>
+              ) : (
+                <textarea
+                  value={feedback[currentProject?.id] || ''}
+                  onChange={(e) => setFeedback({ ...feedback, [currentProject.id]: e.target.value })}
+                  placeholder="Write specific feedback on technical strengths, UI polish, or suggestions..."
+                  rows={3}
+                  className="apple-input"
+                  style={{ resize: 'vertical' }}
+                />
+              )}
             </Card>
           </div>
 
-          {/* Right Column: Scoring Rubric Sliders */}
+          {/* Right Column: Scoring Rubric */}
           <Card
-            title="Evaluation Rubric"
-            subtitle="Rate each criterion from 0 (poor) to 10 (exceptional)"
+            title={readonly ? "Evaluated Rubric" : "Evaluation Rubric"}
+            subtitle={readonly ? "Criterion breakdown for this project" : "Rate each criterion from 0 (poor) to 10 (exceptional)"}
             action={
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <span className="tabular-nums" style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700, color: 'var(--accent)' }}>

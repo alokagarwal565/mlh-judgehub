@@ -2,84 +2,211 @@ import React from 'react';
 
 /**
  * Apple HIG Touch-optimized numeric scoring control (0 - 10)
- * Replaces imprecise mobile sliders with large 44x44pt single-tap segmented targets
+ * Uses native Apple design tokens and smooth micro-steppers + slider
  */
 export default function TouchScoreStepper({
-  value = 0,
+  value = 5,
   onChange,
   disabled = false,
   label,
-  desc
+  desc,
+  min = 0,
+  max = 10,
 }) {
   const currentVal = typeof value === 'number' ? value : 0;
-
-  const handleSelect = (num) => {
-    if (disabled) return;
-    onChange(num);
-  };
+  const pct = Math.min(100, Math.max(0, ((currentVal - min) / (max - min)) * 100));
+  const accentColor =
+    currentVal >= 8
+      ? 'var(--accent-success)'
+      : currentVal >= 5
+      ? 'var(--accent)'
+      : 'var(--accent-warning)';
 
   const decrement = () => {
-    if (disabled || currentVal <= 0) return;
+    if (disabled || currentVal <= min) return;
     onChange(currentVal - 1);
   };
 
   const increment = () => {
-    if (disabled || currentVal >= 10) return;
+    if (disabled || currentVal >= max) return;
     onChange(currentVal + 1);
   };
 
-  return (
-    <div className="py-2.5 border-b border-white/5 last:border-0">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <span className="text-sm font-semibold text-white tracking-tight">{label}</span>
-          {desc && <p className="text-xs text-neutral-400 mt-0.5 leading-snug">{desc}</p>}
+  // Read-only inspection presentation
+  if (disabled) {
+    return (
+      <div
+        style={{
+          padding: '12px 14px',
+          background: 'var(--bg-surface-elevated)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {label}
+            </div>
+            {desc && (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                {desc}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+            <span
+              className="tabular-nums"
+              style={{
+                fontSize: 'var(--font-size-lg)',
+                fontWeight: 700,
+                color: accentColor,
+              }}
+            >
+              {currentVal}
+            </span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>/ {max}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 pl-3">
+
+        {/* Visual Score Track */}
+        <div
+          style={{
+            height: 4,
+            borderRadius: 2,
+            background: 'rgba(255, 255, 255, 0.08)',
+            overflow: 'hidden',
+            width: '100%',
+          }}
+        >
+          <div
+            style={{
+              width: `${pct}%`,
+              height: '100%',
+              background: accentColor,
+              borderRadius: 2,
+              transition: 'width 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Active scoring mode: Slider + tactile +/- tap buttons
+  return (
+    <div
+      style={{
+        padding: '12px 14px',
+        background: 'var(--bg-surface-elevated)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-md)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+            {label}
+          </div>
+          {desc && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.3 }}>
+              {desc}
+            </div>
+          )}
+        </div>
+
+        {/* Stepper Buttons & Score Display */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             onClick={decrement}
-            disabled={disabled || currentVal <= 0}
-            className="w-8 h-8 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-base font-bold text-neutral-300 transition-colors"
-            aria-label="Decrement score"
+            disabled={currentVal <= min}
+            aria-label={`Decrease ${label}`}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              border: '1px solid var(--border-medium)',
+              background: 'var(--bg-surface)',
+              color: 'var(--text-primary)',
+              fontSize: 16,
+              fontWeight: 700,
+              cursor: currentVal <= min ? 'not-allowed' : 'pointer',
+              opacity: currentVal <= min ? 0.3 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none',
+              transition: 'var(--transition-fast)',
+            }}
           >
-            -
+            −
           </button>
-          <span className="w-7 text-center font-bold text-lg text-emerald-400 tabular-nums">
-            {currentVal}
-          </span>
+
+          <div style={{ minWidth: 36, textAlign: 'center' }}>
+            <span
+              className="tabular-nums"
+              style={{
+                fontSize: 'var(--font-size-lg)',
+                fontWeight: 700,
+                color: accentColor,
+              }}
+            >
+              {currentVal}
+            </span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>/{max}</span>
+          </div>
+
           <button
             type="button"
             onClick={increment}
-            disabled={disabled || currentVal >= 10}
-            className="w-8 h-8 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-base font-bold text-neutral-300 transition-colors"
-            aria-label="Increment score"
+            disabled={currentVal >= max}
+            aria-label={`Increase ${label}`}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              border: '1px solid var(--border-medium)',
+              background: 'var(--bg-surface)',
+              color: 'var(--text-primary)',
+              fontSize: 16,
+              fontWeight: 700,
+              cursor: currentVal >= max ? 'not-allowed' : 'pointer',
+              opacity: currentVal >= max ? 0.3 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none',
+              transition: 'var(--transition-fast)',
+            }}
           >
             +
           </button>
         </div>
       </div>
 
-      {/* 0-10 Segmented Touch Strip (Minimum 44pt tap target) */}
-      <div className="grid grid-cols-11 gap-1 pt-1">
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
-          const isSelected = currentVal === num;
-          return (
-            <button
-              key={num}
-              type="button"
-              disabled={disabled}
-              onClick={() => handleSelect(num)}
-              className={`min-h-[40px] h-10 rounded-lg text-xs font-bold transition-all duration-150 flex items-center justify-center ${
-                isSelected
-                  ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/25 scale-105 z-10 font-extrabold'
-                  : 'bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white border border-white/5'
-              } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-            >
-              {num}
-            </button>
-          );
-        })}
+      {/* Apple Slider with Fill Track */}
+      <div className="apple-slider-track-wrap" style={{ width: '100%' }}>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={currentVal}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="apple-slider"
+          style={{
+            '--fill-pct': `${pct}%`,
+            width: '100%',
+          }}
+          aria-label={label}
+        />
       </div>
     </div>
   );
