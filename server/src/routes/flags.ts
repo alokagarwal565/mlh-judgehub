@@ -9,8 +9,15 @@ const router = Router();
 // GET /api/events/:eventId/flags
 router.get('/:eventId/flags', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
+    const where: any = { eventId: req.params.eventId };
+    if (req.user!.role === 'JUDGE') {
+      where.flaggedBy = req.user!.userId;
+    } else if (req.query.judgeId) {
+      where.flaggedBy = String(req.query.judgeId);
+    }
+
     const flags = await prisma.flag.findMany({
-      where: { eventId: req.params.eventId },
+      where,
       include: {
         project: { select: { title: true, roomNumber: true, teamNumber: true, team: { select: { name: true } } } },
         creator: { select: { name: true, role: true } }
@@ -194,11 +201,18 @@ router.put('/:eventId/flags/:flagId', authenticate, requireActiveEvent, requireR
 // GET /api/events/:eventId/projects/:projectId/flags — Get all flags for a project
 router.get('/:eventId/projects/:projectId/flags', authenticate, requireActiveEvent, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
   try {
+    const where: any = {
+      eventId: req.params.eventId,
+      projectId: req.params.projectId
+    };
+    if (req.user!.role === 'JUDGE') {
+      where.flaggedBy = req.user!.userId;
+    } else if (req.query.judgeId) {
+      where.flaggedBy = String(req.query.judgeId);
+    }
+
     const flags = await prisma.flag.findMany({
-      where: {
-        eventId: req.params.eventId,
-        projectId: req.params.projectId
-      },
+      where,
       include: {
         creator: { select: { name: true, role: true } }
       },

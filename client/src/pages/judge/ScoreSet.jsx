@@ -494,6 +494,10 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         reason: flagReason,
       });
       success('Flag submitted for organizer integrity review');
+      setProjectFlags((prev) => ({
+        ...prev,
+        [currentProject.id]: [{ projectId: currentProject.id, reason: flagReason, createdAt: new Date() }]
+      }));
       setFlagModal(false);
       setFlagReason('');
     } catch (err) {
@@ -653,8 +657,8 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
               action={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {projectFlags[currentProject?.id] && (
-                    <Badge variant="danger" size="sm" icon={Flag}>
-                      Flagged
+                    <Badge variant="danger" size="sm" icon={Flag} title={projectFlags[currentProject.id][0]?.reason}>
+                      Flagged by you
                     </Badge>
                   )}
                   {!readonly && (
@@ -685,6 +689,50 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                 </div>
               }
             >
+              {/* Flagged by you callout banner */}
+              {projectFlags[currentProject?.id] && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    marginBottom: 16,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(255, 69, 58, 0.08)',
+                    border: '1px solid rgba(255, 69, 58, 0.25)',
+                    color: 'var(--accent-danger)',
+                    fontSize: 'var(--font-size-xs)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Flag size={13} />
+                    <span><strong>Flagged by you:</strong> {projectFlags[currentProject.id][0]?.reason || 'Flagged for organizer review'}</span>
+                  </div>
+                  {!readonly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFlagReason(projectFlags[currentProject.id][0]?.reason || '');
+                        setFlagModal(true);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--accent-danger)',
+                        textDecoration: 'underline',
+                        fontSize: 'var(--font-size-xs)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        padding: 0
+                      }}
+                    >
+                      Edit Reason
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div style={{ marginBottom: 16 }}>
                 <span style={{ fontSize: 'var(--font-size-2xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
                   Description
@@ -949,14 +997,31 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
                       { value: '', label: '-- Choose Project --' },
                       ...projects.map((p) => {
                         const s = getScore(p.id);
-                        const total = s.completion + s.originality + s.learning + s.design + s.technology;
+                        const total = (s.completion || 0) + (s.originality || 0) + (s.learning || 0) + (s.design || 0) + (s.technology || 0);
+                        const isFlagged = !!projectFlags[p.id];
                         return {
                           value: p.id,
-                          label: `${p.title} (${total}/50 marks)`
+                          label: `${isFlagged ? '🚩 ' : ''}${p.title} (${total}/50 marks)${isFlagged ? ' — Flagged by you' : ''}`
                         };
                       })
                     ]}
                   />
+
+                  {selectedId && projectFlags[selectedId] && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--accent-danger)'
+                      }}
+                    >
+                      <Flag size={12} />
+                      <span>Note: You flagged this project ({projectFlags[selectedId][0]?.reason || 'Flagged for organizer review'})</span>
+                    </div>
+                  )}
                 </div>
               );
             })}

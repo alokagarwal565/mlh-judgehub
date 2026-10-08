@@ -24,7 +24,8 @@ import {
   FileText,
   AlertTriangle,
   Sparkles,
-  Lock
+  Lock,
+  Flag
 } from '../../components/ui/icons';
 
 export default function JudgeDashboard({ isAdminView }) {
@@ -34,6 +35,7 @@ export default function JudgeDashboard({ isAdminView }) {
   const [events, setEvents] = useState([]);
   const [eventId, setEventId] = useState('');
   const [sets, setSets] = useState([]);
+  const [userFlags, setUserFlags] = useState({});
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('inProgress');
   const [editModal, setEditModal] = useState(false);
@@ -77,6 +79,17 @@ export default function JudgeDashboard({ isAdminView }) {
         .catch((err) => {
           console.warn('[Dashboard] Network fetch failed; showing cached sets', err);
         });
+
+      // 3. Fetch judge's own flags
+      api.get(`/events/${eventId}/flags${isAdminView && viewAsJudgeId ? `?judgeId=${viewAsJudgeId}` : ''}`)
+        .then((r) => {
+          const map = {};
+          (r.data || []).forEach((f) => {
+            map[f.projectId] = f;
+          });
+          setUserFlags(map);
+        })
+        .catch(() => {});
     }
   }, [eventId, isAdminView, viewAsJudgeId]);
 
@@ -90,10 +103,14 @@ export default function JudgeDashboard({ isAdminView }) {
     socket.on('event:statusChanged', handleUpdate);
     socket.on('assignment:new', handleUpdate);
     socket.on('edit-request:statusChanged', handleUpdate);
+    socket.on('flag:created', handleUpdate);
+    socket.on('flag:updated', handleUpdate);
     return () => {
       socket.off('event:statusChanged', handleUpdate);
       socket.off('assignment:new', handleUpdate);
       socket.off('edit-request:statusChanged', handleUpdate);
+      socket.off('flag:created', handleUpdate);
+      socket.off('flag:updated', handleUpdate);
     };
   }, [socket, loadSets]);
 
@@ -245,38 +262,57 @@ export default function JudgeDashboard({ isAdminView }) {
             </div>
 
             {/* List of projects in this set */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
               {activeSet.projects?.map((sp, idx) => {
                 const p = sp.project;
                 const isScored = activeSet.scores?.some((s) => s.projectId === p.id);
+                const isFlaggedByMe = !!userFlags[p.id];
+                const roomText = p.roomNumber
+                  ? (p.roomNumber.toLowerCase().startsWith('room') ? p.roomNumber : `Room ${p.roomNumber}`)
+                  : 'Room TBD';
 
                 return (
                   <div
                     key={p.id}
                     style={{
-                      padding: '12px 14px',
+                      padding: '14px 16px',
                       background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
+                      border: `1px solid ${isFlaggedByMe ? 'rgba(255, 69, 58, 0.35)' : 'var(--border-subtle)'}`,
                       borderRadius: 'var(--radius-md)',
                       display: 'flex',
-                      alignItems: 'center',
+                      flexDirection: 'column',
                       justifyContent: 'space-between',
+                      minHeight: 90,
                       gap: 10
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>
+                    {/* Header: Project Title on Left, Scored/Pending Badge on Right */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)', lineHeight: 1.35 }}>
                         {idx + 1}. {p.title}
                       </div>
-                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                        Room: <strong style={{ color: 'var(--text-secondary)' }}>{p.roomNumber || 'TBD'}</strong> • Team {p.teamNumber || '—'}
+                      <div style={{ flexShrink: 0 }}>
+                        {isScored ? (
+                          <Badge variant="success" size="sm" icon={CheckCircle2}>Scored</Badge>
+                        ) : (
+                          <Badge variant="default" size="sm">Pending</Badge>
+                        )}
                       </div>
                     </div>
-                    {isScored ? (
-                      <Badge variant="success" size="sm" icon={CheckCircle2}>Scored</Badge>
-                    ) : (
-                      <Badge variant="default" size="sm">Pending</Badge>
-                    )}
+
+                    {/* Footer: Room & Team on Left, Flagged Badge on Right */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
+                        <strong style={{ color: 'var(--text-secondary)' }}>{roomText}</strong>
+                        {p.teamNumber ? ` • Team ${p.teamNumber}` : ''}
+                      </div>
+
+                      {isFlaggedByMe && (
+                        <Badge variant="danger" size="xs" icon={Flag} title={userFlags[p.id].reason}>
+                          Flagged by you
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -328,6 +364,7 @@ export default function JudgeDashboard({ isAdminView }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {completedSets.map((set) => {
               const latestEdit = set.editRequests?.[0];
+              const flaggedProjectsInSet = (set.projects || []).filter((sp) => userFlags[(sp.project || sp).id]);
 
               return (
                 <Card
@@ -337,11 +374,16 @@ export default function JudgeDashboard({ isAdminView }) {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
                         <h4 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--text-primary)' }}>
                           Set #{set.setNumber}
                         </h4>
                         <Badge variant="success" icon={CheckCircle2}>Submitted</Badge>
+                        {flaggedProjectsInSet.length > 0 && (
+                          <Badge variant="danger" icon={Flag} size="sm">
+                            {flaggedProjectsInSet.length} Flagged by you
+                          </Badge>
+                        )}
                         {latestEdit?.status === 'PENDING' && (
                           <Badge variant="warning">Unlock Requested</Badge>
                         )}
@@ -379,6 +421,38 @@ export default function JudgeDashboard({ isAdminView }) {
                       )}
                     </div>
                   </div>
+
+                  {/* Project tags with any flagged indicators */}
+                  {set.projects?.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+                      {set.projects.map((sp) => {
+                        const p = sp.project || sp;
+                        const isFlaggedByMe = !!userFlags[p.id];
+                        return (
+                          <div
+                            key={p.id}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '4px 10px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: isFlaggedByMe ? 'rgba(255, 69, 58, 0.1)' : 'var(--bg-surface)',
+                              border: `1px solid ${isFlaggedByMe ? 'rgba(255, 69, 58, 0.3)' : 'var(--border-subtle)'}`,
+                              fontSize: 'var(--font-size-xs)',
+                              color: isFlaggedByMe ? 'var(--accent-danger)' : 'var(--text-secondary)'
+                            }}
+                          >
+                            {isFlaggedByMe && <Flag size={12} />}
+                            <span style={{ fontWeight: isFlaggedByMe ? 600 : 400 }}>{p.title}</span>
+                            {isFlaggedByMe && (
+                              <span style={{ fontSize: 10, opacity: 0.9 }}>• Flagged by you</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </Card>
               );
             })}
