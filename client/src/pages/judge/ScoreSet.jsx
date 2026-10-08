@@ -11,6 +11,16 @@ import Button, { IconButton } from '../../components/ui/Button';
 import { Slider, Select } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import Skeleton, { SkeletonCard } from '../../components/ui/Skeleton';
+import SyncStatusPill from '../../components/ui/SyncStatusPill';
+import TouchScoreStepper from '../../components/ui/TouchScoreStepper';
+import {
+  cacheSet,
+  getCachedSet,
+  saveDraftScore,
+  getDraftScores,
+  enqueueMutation
+} from '../../services/idb';
+import { syncEngine } from '../../services/syncEngine';
 import {
   Clock,
   CheckCircle2,
@@ -67,93 +77,154 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   useEffect(() => {
     let isMounted = true;
 
+    const populateSetData = (setData) => {
+      // Prepopulate scores
+      const existingScores = {};
+      const existingFeedback = {};
+      const existingNoms = {};
+      for (const s of setData.scores || []) {
+        existingScores[s.projectId] = {
+          completion: s.completion,
+          originality: s.originality,
+          learning: s.learning,
+          design: s.design,
+          technology: s.technology,
+        };
+      }
+      setScores(existingScores);
+
+      // Prepopulate feedback
+      for (const f of setData.feedback || []) {
+        existingFeedback[f.projectId] = f.comment;
+      }
+      setFeedback(existingFeedback);
+
+      // Prepopulate nominations
+      for (const n of setData.nominations || []) {
+        if (!existingNoms[n.projectId]) existingNoms[n.projectId] = [];
+        existingNoms[n.projectId].push(n.trackId);
+      }
+      setNominations(existingNoms);
+
+      // Prepopulate rankings
+      const numProjects = setData.projects?.length || 0;
+      const isTieBreaker = setData.setNumber === 0;
+      const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
+      const initialRankings = Array(reqRanks).fill(null);
+
+      if (setData.stackRankVotes?.length > 0) {
+        const sortedVotes = [...setData.stackRankVotes].sort((a, b) => a.rank - b.rank);
+        sortedVotes.slice(0, reqRanks).forEach((v, i) => {
+          initialRankings[i] = v.projectId;
+        });
+      } else if (setData.scores?.length > 0) {
+        const scoreMap = {};
+        setData.scores.forEach((s) => {
+          scoreMap[s.projectId] = s.total;
+        });
+        const sortedProjects = [...(setData.projects || [])].sort((a, b) => {
+          const scoreA = scoreMap[a.project?.id || a.projectId] ?? 0;
+          const scoreB = scoreMap[b.project?.id || b.projectId] ?? 0;
+          return scoreB - scoreA;
+        });
+        sortedProjects.slice(0, reqRanks).forEach((sp, i) => {
+          initialRankings[i] = sp.project?.id || sp.projectId;
+        });
+      }
+      setRankings(initialRankings);
+
+      // Check if all scored
+      const allScored = (setData.projects || []).every((sp) =>
+        setData.scores?.some((s) => s.projectId === (sp.project?.id || sp.projectId))
+      );
+      if (allScored && setData.scores?.length > 0) {
+        setIsEditing(true);
+      }
+    };
+
     const loadSetData = async () => {
       try {
-        let ev = activeEvent;
-        if (!ev) {
-          const eventsRes = await api.get('/events');
-          ev = eventsRes.data.find((e) => e.isActive) || eventsRes.data.find((e) => e.status === 'JUDGING') || eventsRes.data[0];
+        // 1. Instant offline access: load from IndexedDB cache
+        let cached = null;
+        try {
+          cached = await getCachedSet(setId);
+          if (cached && isMounted) {
+            setSet(cached);
+            populateSetData(cached);
+          }
+        } catch (e) {
+          console.warn('[Offline] Failed to read cached set', e);
         }
 
+        let ev = activeEvent;
         if (!ev) {
+          try {
+            const eventsRes = await api.get('/events');
+            ev = eventsRes.data.find((e) => e.isActive) || eventsRes.data.find((e) => e.status === 'JUDGING') || eventsRes.data[0];
+          } catch {
+            if (cached) ev = { id: cached.eventId };
+          }
+        }
+
+        if (!ev && !cached) {
           if (isMounted) toastError('No active hackathon event found.');
           return;
         }
 
-        const setRes = await api.get(`/events/${ev.id}/sets/${setId}`);
-        if (!isMounted) return;
+        const effectiveEventId = ev?.id || cached?.eventId;
+        let setData = cached;
 
-        const setData = setRes.data;
-        setSet(setData);
-
-        // Prepopulate scores
-        const existingScores = {};
-        const existingFeedback = {};
-        const existingNoms = {};
-        for (const s of setData.scores || []) {
-          existingScores[s.projectId] = {
-            completion: s.completion,
-            originality: s.originality,
-            learning: s.learning,
-            design: s.design,
-            technology: s.technology,
-          };
+        try {
+          const setRes = await api.get(`/events/${effectiveEventId}/sets/${setId}`);
+          if (isMounted) {
+            setData = setRes.data;
+            setSet(setData);
+            populateSetData(setData);
+            cacheSet(setData).catch(() => {});
+          }
+        } catch (netErr) {
+          if (!cached) {
+            console.error('Fetch set error', netErr);
+            if (isMounted) toastError('Failed to fetch set details. Please check connection.');
+            return;
+          }
+          console.log('[Offline] Operating on cached set data');
         }
-        setScores(existingScores);
 
-        // Prepopulate feedback
-        for (const f of setData.feedback || []) {
-          existingFeedback[f.projectId] = f.comment;
-        }
-        setFeedback(existingFeedback);
-
-        // Prepopulate nominations
-        for (const n of setData.nominations || []) {
-          if (!existingNoms[n.projectId]) existingNoms[n.projectId] = [];
-          existingNoms[n.projectId].push(n.trackId);
-        }
-        setNominations(existingNoms);
-
-        // Prepopulate rankings
-        const numProjects = setData.projects.length;
-        const isTieBreaker = setData.setNumber === 0;
-        const reqRanks = isTieBreaker ? numProjects : Math.min(3, numProjects);
-        const initialRankings = Array(reqRanks).fill(null);
-
-        if (setData.stackRankVotes?.length > 0) {
-          const sortedVotes = [...setData.stackRankVotes].sort((a, b) => a.rank - b.rank);
-          sortedVotes.slice(0, reqRanks).forEach((v, i) => {
-            initialRankings[i] = v.projectId;
-          });
-        } else if (setData.scores?.length > 0) {
-          // Auto-calculate 1st, 2nd, 3rd from Phase 1 total marks
-          const scoreMap = {};
-          setData.scores.forEach((s) => {
-            scoreMap[s.projectId] = s.total;
-          });
-          const sortedProjects = [...setData.projects].sort((a, b) => {
-            const scoreA = scoreMap[a.project.id] ?? 0;
-            const scoreB = scoreMap[b.project.id] ?? 0;
-            return scoreB - scoreA;
-          });
-          sortedProjects.slice(0, reqRanks).forEach((sp, i) => {
-            initialRankings[i] = sp.project.id;
-          });
-        }
-        setRankings(initialRankings);
-
-        // Check if all scored
-        const allScored = setData.projects.every((sp) =>
-          setData.scores?.some((s) => s.projectId === sp.project.id)
-        );
-        if (allScored && setData.scores?.length > 0) {
-          setIsEditing(true);
+        // Overlay draft scores from IndexedDB
+        try {
+          const drafts = await getDraftScores(setId);
+          if (drafts?.length > 0 && isMounted) {
+            setScores((prev) => {
+              const updated = { ...prev };
+              drafts.forEach((d) => {
+                if (d.scores) updated[d.projectId] = d.scores;
+              });
+              return updated;
+            });
+            setFeedback((prev) => {
+              const updated = { ...prev };
+              drafts.forEach((d) => {
+                if (d.comment) updated[d.projectId] = d.comment;
+              });
+              return updated;
+            });
+            setNominations((prev) => {
+              const updated = { ...prev };
+              drafts.forEach((d) => {
+                if (d.nominations) updated[d.projectId] = d.nominations;
+              });
+              return updated;
+            });
+          }
+        } catch {
+          // Ignore draft overlay failure
         }
 
         // Fetch flags & tracks
         const [flagsRes, tracksRes] = await Promise.allSettled([
-          api.get(`/events/${ev.id}/flags`),
-          api.get(`/events/${ev.id}/tracks`)
+          api.get(`/events/${effectiveEventId}/flags`),
+          api.get(`/events/${effectiveEventId}/tracks`)
         ]);
 
         if (isMounted && flagsRes.status === 'fulfilled') {
@@ -257,31 +328,50 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
     if (readonly || !currentProject) return;
     setSaving(true);
     try {
-      const eventId = activeEvent?.id || set.eventId;
+      const eventId = activeEvent?.id || set?.eventId;
       const s = getScore(currentProject.id);
 
-      await Promise.all([
-        api.post(`/events/${eventId}/sets/${setId}/scores`, {
+      // 1. Immediately persist draft locally to IndexedDB
+      await saveDraftScore(setId, currentProject.id, {
+        scores: s,
+        comment: feedback[currentProject.id] || '',
+        nominations: nominations[currentProject.id] || [],
+        timeSpentSeconds: timer,
+      });
+
+      // 2. Enqueue mutations to Outbox for reliable background synchronization
+      await enqueueMutation({
+        eventId,
+        setId,
+        projectId: currentProject.id,
+        operation: 'SAVE_SCORE',
+        payload: { ...s, timeSpentSeconds: timer },
+      });
+
+      if (feedback[currentProject.id]) {
+        await enqueueMutation({
+          eventId,
+          setId,
           projectId: currentProject.id,
-          ...s,
-          timeSpentSeconds: timer,
-        }),
-        feedback[currentProject.id]
-          ? api.post(`/events/${eventId}/sets/${setId}/feedback`, {
-              projectId: currentProject.id,
-              comment: feedback[currentProject.id],
-            })
-          : Promise.resolve(),
-        nominations[currentProject.id]
-          ? api.post(`/events/${eventId}/sets/${setId}/nominate`, {
-              projectId: currentProject.id,
-              trackIds: nominations[currentProject.id],
-            })
-          : Promise.resolve(),
-      ]);
+          operation: 'SAVE_FEEDBACK',
+          payload: { comment: feedback[currentProject.id] },
+        });
+      }
+
+      if (nominations[currentProject.id]?.length > 0) {
+        await enqueueMutation({
+          eventId,
+          setId,
+          projectId: currentProject.id,
+          operation: 'SAVE_NOMINATIONS',
+          payload: { trackIds: nominations[currentProject.id] },
+        });
+      }
+
+      // 3. Trigger background sync flush (does not block if offline)
+      syncEngine.flushOutbox();
     } catch (err) {
-      console.error('Save failed', err);
-      toastError('Failed to save scores for this project');
+      console.error('Local save error', err);
     } finally {
       setSaving(false);
     }
@@ -358,16 +448,32 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
   const submitFinalSet = async () => {
     setSaving(true);
     try {
-      const eventId = activeEvent?.id || set.eventId;
+      const eventId = activeEvent?.id || set?.eventId;
       const ranksPayload = rankings.map((pid, idx) => ({ projectId: pid, rank: idx + 1 }));
 
-      await api.post(`/events/${eventId}/sets/${setId}/rank`, { rankings: ranksPayload });
-      await api.post(`/events/${eventId}/sets/${setId}/complete`);
+      // Enqueue ranking and completion to Outbox
+      await enqueueMutation({
+        eventId,
+        setId,
+        operation: 'SAVE_RANKS',
+        payload: { rankings: ranksPayload }
+      });
 
-      success('Evaluation set submitted successfully!');
+      await enqueueMutation({
+        eventId,
+        setId,
+        operation: 'COMPLETE_SET',
+        payload: {}
+      });
+
+      // Attempt background sync
+      syncEngine.flushOutbox();
+
+      success('Evaluation set submitted! (Syncing automatically in background)');
       navigate(isAdminView ? `/admin/assignments` : `/judge`);
     } catch (err) {
-      toastError(err.response?.data?.error || 'Failed to complete set');
+      console.error('Failed to submit final set', err);
+      toastError('Failed to record set submission');
     } finally {
       setSaving(false);
     }
@@ -446,6 +552,8 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SyncStatusPill />
+
           {readonly && (
             <Button
               variant="secondary"
@@ -656,21 +764,16 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
               </div>
             }
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {CRITERIA.map((crit) => (
-                <div key={crit.key} style={{ paddingBottom: 12, borderBottom: '1px solid var(--border-subtle)' }}>
-                  <Slider
-                    label={crit.label}
-                    min={0}
-                    max={10}
-                    value={currentScore[crit.key]}
-                    onChange={(e) => updateScoreField(crit.key, e.target.value)}
-                    disabled={readonly}
-                  />
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: -6 }}>
-                    {crit.desc}
-                  </div>
-                </div>
+                <TouchScoreStepper
+                  key={crit.key}
+                  label={crit.label}
+                  desc={crit.desc}
+                  value={currentScore[crit.key]}
+                  onChange={(val) => updateScoreField(crit.key, val)}
+                  disabled={readonly}
+                />
               ))}
             </div>
 

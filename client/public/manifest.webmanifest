@@ -1,0 +1,19 @@
+{
+  "name": "MLH JudgeHub",
+  "short_name": "JudgeHub",
+  "description": "Live Hackathon Judging and Evaluation Platform",
+  "start_url": "/judge",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"]
+}

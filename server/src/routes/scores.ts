@@ -295,6 +295,12 @@ router.post('/:eventId/sets/:setId/complete', authenticate, requireRole('JUDGE',
 
     const set = auth.set;
     const judgeId = auth.judgeId!;
+
+    // Idempotency guard: If set is already COMPLETED, return early without re-assigning or duplicate side-effects
+    if (set.status === 'COMPLETED') {
+      return res.json({ message: 'Set already completed', setId, status: 'COMPLETED' });
+    }
+
     const projectIds = set.projects.map(p => p.projectId);
     const scores = await prisma.score.findMany({
       where: { setId, judgeId, projectId: { in: projectIds } }
@@ -407,6 +413,163 @@ router.get('/:eventId/sets/:setId', authenticate, async (req, res) => {
     }
 
     res.json({ ...set, baseRank });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/events/:eventId/sync — Batch sync offline mutations
+router.post('/:eventId/sync', authenticate, requireRole('JUDGE', 'ADMIN'), async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { mutations } = req.body;
+    if (!Array.isArray(mutations) || mutations.length === 0) {
+      return res.json({ processed: 0, results: [] });
+    }
+
+    const results: Array<{ id: string; status: 'SYNCED' | 'FAILED' | 'CONFLICT'; error?: string }> = [];
+
+    for (const mut of mutations) {
+      try {
+        const { id, operation, setId, projectId, payload } = mut;
+        const auth = await authorizeSetAccess(req, eventId, setId);
+        if (auth.error || !auth.set) {
+          results.push({ id, status: 'CONFLICT', error: auth.error || 'Set access denied or reassigned' });
+          continue;
+        }
+
+        const judgeId = auth.judgeId!;
+
+        if (operation === 'SAVE_SCORE') {
+          const { completion, originality, learning, design, technology, timeSpentSeconds } = payload;
+          const total = (Number(completion) || 0) + (Number(originality) || 0) + (Number(learning) || 0) + (Number(design) || 0) + (Number(technology) || 0);
+          const timeSeconds = typeof timeSpentSeconds === 'number' && timeSpentSeconds > 0 ? timeSpentSeconds : 0;
+
+          await prisma.score.upsert({
+            where: {
+              setId_projectId_judgeId: { setId, projectId, judgeId }
+            },
+            create: {
+              setId,
+              projectId,
+              judgeId,
+              completion: Number(completion) || 0,
+              originality: Number(originality) || 0,
+              learning: Number(learning) || 0,
+              design: Number(design) || 0,
+              technology: Number(technology) || 0,
+              total,
+              timeSpentSeconds: timeSeconds
+            },
+            update: {
+              completion: Number(completion) || 0,
+              originality: Number(originality) || 0,
+              learning: Number(learning) || 0,
+              design: Number(design) || 0,
+              technology: Number(technology) || 0,
+              total,
+              timeSpentSeconds: timeSeconds
+            }
+          });
+          results.push({ id, status: 'SYNCED' });
+        } else if (operation === 'SAVE_FEEDBACK') {
+          if (payload.comment) {
+            await prisma.feedback.create({
+              data: {
+                setId,
+                projectId,
+                judgeId,
+                comment: String(payload.comment)
+              }
+            });
+          }
+          results.push({ id, status: 'SYNCED' });
+        } else if (operation === 'SAVE_NOMINATIONS') {
+          const trackIds = Array.isArray(payload.trackIds) ? payload.trackIds : [];
+          await prisma.$transaction([
+            prisma.trackNomination.deleteMany({
+              where: { setId, projectId, judgeId }
+            }),
+            ...(trackIds.length > 0
+              ? [
+                  prisma.trackNomination.createMany({
+                    data: trackIds.map((trackId: string) => ({
+                      setId,
+                      projectId,
+                      judgeId,
+                      trackId
+                    }))
+                  })
+                ]
+              : [])
+          ]);
+          results.push({ id, status: 'SYNCED' });
+        } else if (operation === 'SAVE_RANKS') {
+          const rankings = Array.isArray(payload.rankings) ? payload.rankings : [];
+          if (rankings.length > 0) {
+            const numProjects = auth.set.projects.length;
+            const isTieBreaker = auth.set.setNumber === 0;
+            const allowedPointSlots = isTieBreaker ? numProjects : Math.max(1, numProjects - 2);
+            const basePoints = [3, 2, 1];
+            const pointsMap: Record<number, number> = {};
+            for (let i = 0; i < allowedPointSlots; i++) {
+              pointsMap[i + 1] = basePoints[i] || 0;
+            }
+
+            await prisma.$transaction([
+              prisma.stackRankVote.deleteMany({ where: { setId, judgeId } }),
+              prisma.stackRankVote.createMany({
+                data: rankings.map((r: { projectId: string; rank: number }) => ({
+                  setId,
+                  judgeId,
+                  projectId: r.projectId,
+                  rank: r.rank,
+                  points: pointsMap[r.rank] || 0
+                }))
+              })
+            ]);
+          }
+          results.push({ id, status: 'SYNCED' });
+        } else if (operation === 'COMPLETE_SET') {
+          if (auth.set.status === 'COMPLETED') {
+            results.push({ id, status: 'SYNCED' });
+          } else {
+            await prisma.judgeSet.update({
+              where: { id: setId },
+              data: { status: 'COMPLETED' }
+            });
+
+            const { updateProjectJudgingStatus, assignNextSetToJudge } = await import('../engine/assignment.js');
+            for (const sp of auth.set.projects) {
+              await updateProjectJudgingStatus(sp.projectId);
+            }
+
+            if (req.user!.role === 'JUDGE') {
+              const newSetId = await assignNextSetToJudge(eventId, judgeId);
+              if (newSetId) {
+                const io = req.app.get('io');
+                if (io) io.to(`event:${eventId}`).emit('assignment:new', { judgeId, setId: newSetId });
+              }
+            }
+            results.push({ id, status: 'SYNCED' });
+          }
+        } else {
+          results.push({ id, status: 'FAILED', error: `Unknown operation: ${operation}` });
+        }
+      } catch (err: any) {
+        results.push({ id: mut.id, status: 'FAILED', error: err.message });
+      }
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`event:${eventId}`).emit('score:batchSynced', {
+        judgeId: req.user?.userId,
+        syncedCount: results.filter(r => r.status === 'SYNCED').length
+      });
+    }
+
+    res.json({ processed: results.length, results });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -12,6 +12,8 @@ import SegmentedControl from '../../components/ui/SegmentedControl';
 import Modal from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import EmptyState from '../../components/ui/EmptyState';
+import SyncStatusPill from '../../components/ui/SyncStatusPill';
+import { cacheSet, getAllCachedSets } from '../../services/idb';
 import {
   Layers,
   CheckCircle2,
@@ -54,10 +56,27 @@ export default function JudgeDashboard({ isAdminView }) {
 
   const loadSets = useCallback(() => {
     if (eventId) {
+      // 1. Load from IndexedDB for instant offline viewing
+      getAllCachedSets(eventId)
+        .then((cached) => {
+          if (cached?.length > 0) setSets(cached);
+        })
+        .catch(() => {});
+
+      // 2. Fetch fresh sets from network
       const url = isAdminView
         ? `/events/${eventId}/assignments/judge/${viewAsJudgeId}`
         : `/events/${eventId}/assignments/my-sets`;
-      api.get(url).then((r) => setSets(r.data)).catch(() => {});
+      api.get(url)
+        .then((r) => {
+          setSets(r.data);
+          if (Array.isArray(r.data)) {
+            r.data.forEach((s) => cacheSet(s).catch(() => {}));
+          }
+        })
+        .catch((err) => {
+          console.warn('[Dashboard] Network fetch failed; showing cached sets', err);
+        });
     }
   }, [eventId, isAdminView, viewAsJudgeId]);
 
@@ -143,17 +162,20 @@ export default function JudgeDashboard({ isAdminView }) {
           )
         }
         actions={
-          !isAdminView && inProgressSets.length === 0 && (
-            <Button
-              variant="primary"
-              size="md"
-              icon={Sparkles}
-              loading={loading}
-              onClick={requestNext}
-            >
-              Request Next Set
-            </Button>
-          )
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <SyncStatusPill />
+            {!isAdminView && inProgressSets.length === 0 && (
+              <Button
+                variant="primary"
+                size="md"
+                icon={Sparkles}
+                loading={loading}
+                onClick={requestNext}
+              >
+                Request Next Set
+              </Button>
+            )}
+          </div>
         }
       />
 

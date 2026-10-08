@@ -8,6 +8,7 @@
     "build": "tsc",
     "test": "tsx src/testEngine.ts",
     "test:e2e": "tsx src/testE2E.ts",
+    "test:load": "tsx src/testLoadHarness.ts",
     "vercel-build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "db:push": "prisma db push",

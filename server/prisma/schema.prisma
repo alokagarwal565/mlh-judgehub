@@ -21,6 +21,8 @@ model AuditLog {
   user       User     @relation(fields: [userId], references: [id])
   event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
+  @@index([eventId, createdAt])
+  @@index([userId])
   @@map("audit_logs")
 }
 
@@ -120,6 +122,9 @@ model JudgeSet {
   stackRankVotes StackRankVote[]
   nominations    TrackNomination[]
 
+  @@index([eventId, status])
+  @@index([judgeId, status])
+  @@index([eventId, setNumber])
   @@map("judge_sets")
 }
 
@@ -180,6 +185,8 @@ model Score {
   set              JudgeSet @relation(fields: [setId], references: [id], onDelete: Cascade)
 
   @@unique([setId, projectId, judgeId])
+  @@index([judgeId])
+  @@index([projectId])
   @@map("scores")
 }
 
