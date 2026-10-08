@@ -612,6 +612,14 @@ body {
   margin-bottom: 24px;
 }
 
+/* Two-column responsive scoring grid */
+.judge-scoring-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.4fr);
+  gap: 24px;
+  align-items: start;
+}
+
 /* ==========================================================================
    Buttons & Controls
    ========================================================================== */
@@ -1429,13 +1437,37 @@ body {
    ========================================================================== */
 
 @media (max-width: 900px) {
+  .app-layout {
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .mobile-header {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .main-content {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 16px 16px 40px;
+  }
+
   .sidebar {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
+    width: 280px;
+    max-width: 85vw;
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
+    z-index: 100;
   }
 
   .sidebar.open {
@@ -1451,7 +1483,7 @@ body {
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
-    z-index: 45;
+    z-index: 90;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--transition-fast);
@@ -1462,12 +1494,14 @@ body {
     pointer-events: auto;
   }
 
-  .mobile-header {
-    display: flex;
+  .judge-scoring-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .main-content {
-    padding: 20px 16px 36px;
+  .apple-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 }
 

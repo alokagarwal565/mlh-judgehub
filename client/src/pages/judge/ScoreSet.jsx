@@ -322,7 +322,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
             <Skeleton key={i} width="20%" height={6} borderRadius={4} />
           ))}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(360px, 1.4fr)', gap: 24, alignItems: 'start' }}>
+        <div className="judge-scoring-grid">
           <SkeletonCard rows={4} />
           <SkeletonCard rows={6} />
         </div>
@@ -644,7 +644,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
 
       {phase === 'scoring' ? (
         /* Phase 1: Rubric Scoring & Project Info */
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(360px, 1.4fr)', gap: 24, alignItems: 'start' }}>
+        <div className="judge-scoring-grid">
           {/* Left Column: Project Overview */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Card
