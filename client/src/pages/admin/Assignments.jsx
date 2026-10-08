@@ -12,6 +12,7 @@ import { SearchField, Select } from '../../components/ui/Input';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
+import { getSetRange } from '../../utils/formatters';
 import {
   Network,
   Sparkles,
@@ -214,18 +215,6 @@ export default function AdminAssignments() {
     } finally {
       setReassigning(false);
     }
-  };
-
-  const getSetRange = (projects) => {
-    if (!projects || projects.length === 0) return '';
-    const sorted = [...projects].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    const firstMatch = sorted[0]?.project?.teamNumber?.match(/\d+/);
-    if (!firstMatch) {
-      return `${sorted.length} projects`;
-    }
-    const start = parseInt(firstMatch[0], 10);
-    const end = start + sorted.length - 1;
-    return `#${start} – #${end}`;
   };
 
   const fmtTime = (s) => {

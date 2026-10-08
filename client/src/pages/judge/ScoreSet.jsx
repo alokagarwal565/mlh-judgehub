@@ -21,6 +21,7 @@ import {
   enqueueMutation
 } from '../../services/idb';
 import { syncEngine } from '../../services/syncEngine';
+import { getSetRange } from '../../utils/formatters';
 import {
   Clock,
   CheckCircle2,
@@ -540,6 +541,21 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
             <span style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-tertiary)' }}>
               Set #{set.setNumber} {set.setNumber === 0 ? '• Tie Breaker' : ''}
             </span>
+            {getSetRange(set.projects) && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '1px 7px',
+                  borderRadius: 6,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
+                Teams {getSetRange(set.projects)}
+              </span>
+            )}
             <span style={{ color: 'var(--text-tertiary)' }}>•</span>
             <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
               {phase === 'scoring' ? `Project ${currentIdx + 1} of ${projects.length}` : 'Final Priority Ranking'}
@@ -923,7 +939,7 @@ export default function JudgeScoreSet({ isAdminView, isReadOnly }) {
         /* Phase 2: Priority Stack Ranking */
         <Card
           title="Stack Rank Top Projects"
-          subtitle={`Assign priority ranks for final scoring. Projects in this set: ${projects.length}.`}
+          subtitle={`Assign priority ranks for final scoring. Projects in this set: ${projects.length}${getSetRange(set?.projects) ? ` (Teams ${getSetRange(set.projects)})` : ''}.`}
         >
           <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Auto-Calculation Notification */}

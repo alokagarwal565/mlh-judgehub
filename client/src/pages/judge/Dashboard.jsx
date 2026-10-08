@@ -14,6 +14,7 @@ import { Input } from '../../components/ui/Input';
 import EmptyState from '../../components/ui/EmptyState';
 import SyncStatusPill from '../../components/ui/SyncStatusPill';
 import { cacheSet, getAllCachedSets } from '../../services/idb';
+import { getSetRange } from '../../utils/formatters';
 import {
   Layers,
   CheckCircle2,
@@ -239,10 +240,25 @@ export default function JudgeDashboard({ isAdminView }) {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 18 }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--text-primary)' }}>
                     Set #{activeSet.setNumber}
                   </h3>
+                  {getSetRange(activeSet.projects) && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-subtle)'
+                      }}
+                    >
+                      Teams {getSetRange(activeSet.projects)}
+                    </span>
+                  )}
                   <Badge variant="warning" dot pulse>In Progress</Badge>
                   {activeSet.setNumber === 0 && (
                     <Badge variant="danger">⚡ Tie-Breaker Round</Badge>
@@ -380,6 +396,21 @@ export default function JudgeDashboard({ isAdminView }) {
                         <h4 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--text-primary)' }}>
                           Set #{set.setNumber}
                         </h4>
+                        {getSetRange(set.projects) && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-subtle)'
+                            }}
+                          >
+                            Teams {getSetRange(set.projects)}
+                          </span>
+                        )}
                         <Badge variant="success" icon={CheckCircle2}>Submitted</Badge>
                         {flaggedProjectsInSet.length > 0 && (
                           <Badge variant="danger" icon={Flag} size="sm">
@@ -467,7 +498,7 @@ export default function JudgeDashboard({ isAdminView }) {
         isOpen={editModal}
         onClose={() => setEditModal(false)}
         title="Request Reopen Access"
-        subtitle={`Request organizer permission to modify scores for Set #${selectedSet?.setNumber}`}
+        subtitle={`Request organizer permission to modify scores for Set #${selectedSet?.setNumber}${getSetRange(selectedSet?.projects) ? ` (Teams ${getSetRange(selectedSet?.projects)})` : ''}`}
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditModal(false)}>
