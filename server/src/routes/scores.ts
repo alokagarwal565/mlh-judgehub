@@ -105,6 +105,15 @@ router.post('/:eventId/sets/:setId/feedback', authenticate, requireRole('JUDGE',
       return res.status(400).json({ error: 'Project is not assigned to this set' });
     }
 
+    // ponytail: Replace previous feedback from this judge for this set & project to prevent duplicate rows
+    await prisma.feedback.deleteMany({
+      where: {
+        setId,
+        projectId,
+        judgeId: auth.judgeId!
+      }
+    });
+
     const feedback = await prisma.feedback.create({
       data: {
         setId,
@@ -474,6 +483,9 @@ router.post('/:eventId/sync', authenticate, requireRole('JUDGE', 'ADMIN'), async
           results.push({ id, status: 'SYNCED' });
         } else if (operation === 'SAVE_FEEDBACK') {
           if (payload.comment) {
+            await prisma.feedback.deleteMany({
+              where: { setId, projectId, judgeId }
+            });
             await prisma.feedback.create({
               data: {
                 setId,

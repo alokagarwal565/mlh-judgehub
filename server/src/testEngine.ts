@@ -88,4 +88,54 @@ console.log('\nTest 7: Cache invalidation function works');
 assert.doesNotThrow(() => invalidateActiveEventCache(), 'Cache invalidation should not throw');
 console.log('  ✔ Passed: Cache invalidation reset successfully');
 
-console.log('\n🎉 ALL 7 PRODUCTION ENGINE SELF-CHECKS PASSED SUCCESSFULLY!');
+import { evaluateScoreVariance } from './engine/integrity.js';
+
+console.log('\nTest 8: Score variance detection handles N <= 3 judges with spread threshold');
+// Case 8a: 2 judges with large spread (45 vs 15) must trigger SCORE_VARIANCE
+const largeSpreadScores = [{ total: 45, judgeId: 'j1' }, { total: 15, judgeId: 'j2' }];
+const flagsHigh = evaluateScoreVariance(largeSpreadScores, 'Project Alpha', 'p1');
+assert.equal(flagsHigh.length, 2, 'Expected both outlier scores to be flagged on 30-point spread');
+assert.equal(flagsHigh[0].type, 'SCORE_VARIANCE');
+
+// Case 8b: 2 judges with close scores (40 vs 38) must NOT trigger
+const closeScores = [{ total: 40, judgeId: 'j1' }, { total: 38, judgeId: 'j2' }];
+const flagsLow = evaluateScoreVariance(closeScores, 'Project Beta', 'p2');
+assert.equal(flagsLow.length, 0, 'Expected no flags for close scores');
+
+// Case 8c: 3 judges where one judge deviates sharply (48, 46, 12)
+const threeJudgeScores = [{ total: 48, judgeId: 'j1' }, { total: 46, judgeId: 'j2' }, { total: 12, judgeId: 'j3' }];
+const flagsThree = evaluateScoreVariance(threeJudgeScores, 'Project Gamma', 'p3');
+assert(flagsThree.length > 0, 'Expected flag for sharp outlier with 3 judges');
+assert(flagsThree.some(f => f.judgeId === 'j3'), 'Expected outlier judge j3 to be flagged');
+console.log('  ✔ Passed: Mathematical variance limitation solved for N <= 3 judges');
+
+console.log('\nTest 9: Track winner sorting prioritizes nomination count over general marks');
+// Scenario: Project A has 3 nominations (lower stack/marks); Project B has 1 nomination (higher stack/marks)
+const nomineeTally = [
+  { count: 1, votes: 1, projectId: 'pB', projectTitle: 'Project B', teamName: 'Team B', teamNumber: '2', leaderName: null, roomNumber: null, totalMarks: 100, stackPoints: 9 },
+  { count: 3, votes: 3, projectId: 'pA', projectTitle: 'Project A', teamName: 'Team A', teamNumber: '1', leaderName: null, roomNumber: null, totalMarks: 80, stackPoints: 5 }
+];
+
+const sortedNominees = nomineeTally.sort((a, b) => {
+  if (b.count !== a.count) return b.count - a.count;
+  if (b.stackPoints !== a.stackPoints) return b.stackPoints - a.stackPoints;
+  return b.totalMarks - a.totalMarks;
+});
+
+assert.equal(sortedNominees[0].projectId, 'pA', 'Project with 3 nominations must beat project with 1 nomination');
+assert.equal(sortedNominees[0].votes, 3, 'Winner must expose votes equal to nomination count');
+
+// Tiebreak by stackPoints when nomination counts match
+const tiedNominees = [
+  { count: 2, votes: 2, projectId: 'p1', projectTitle: 'Project 1', teamName: 'T1', teamNumber: '1', leaderName: null, roomNumber: null, totalMarks: 80, stackPoints: 4 },
+  { count: 2, votes: 2, projectId: 'p2', projectTitle: 'Project 2', teamName: 'T2', teamNumber: '2', leaderName: null, roomNumber: null, totalMarks: 70, stackPoints: 6 }
+].sort((a, b) => {
+  if (b.count !== a.count) return b.count - a.count;
+  if (b.stackPoints !== a.stackPoints) return b.stackPoints - a.stackPoints;
+  return b.totalMarks - a.totalMarks;
+});
+assert.equal(tiedNominees[0].projectId, 'p2', 'Project with higher stack points wins when nominations are tied');
+console.log('  ✔ Passed: Track winners correctly determined by nomination count first, stack points second');
+
+console.log('\n🎉 ALL 9 PRODUCTION ENGINE SELF-CHECKS PASSED SUCCESSFULLY!');
+

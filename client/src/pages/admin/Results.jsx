@@ -682,7 +682,7 @@ export default function AdminResults() {
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-surface-overlay)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-xs)' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Judge Nominations:</span>
-                      <strong className="tabular-nums" style={{ color: 'var(--accent-purple)' }}>{track.winner.votes} votes</strong>
+                      <strong className="tabular-nums" style={{ color: 'var(--accent-purple)' }}>{track.winner.votes ?? track.winner.count ?? 0} votes</strong>
                     </div>
                   </div>
                 ) : (

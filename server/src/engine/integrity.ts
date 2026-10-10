@@ -26,6 +26,54 @@ export async function runIntegrityChecks(eventId: string): Promise<IntegrityFlag
   return flags;
 }
 
+/**
+ * Evaluate score variance for a project.
+ * ponytail: Chebyshev/Popoviciu inequality dictates that for N <= 3 judges, the maximum z-score is
+ * mathematically bounded to sqrt(N - 1) <= sqrt(2) ≈ 1.414 < 2.0. Therefore a >2σ test can never
+ * trigger when projects are scored by 2 or 3 judges. We check score spread (>=15 out of 50 pts)
+ * for N <= 3, and >2σ for larger judge pools.
+ */
+export function evaluateScoreVariance(
+  scores: Array<{ total: number; judgeId?: string }>,
+  projectTitle: string,
+  projectId?: string
+): IntegrityFlag[] {
+  if (scores.length < 2) return [];
+
+  const totals = scores.map(s => s.total);
+  const mean = totals.reduce((a, b) => a + b, 0) / totals.length;
+  const variance = totals.reduce((sum, t) => sum + (t - mean) ** 2, 0) / totals.length;
+  const stddev = Math.sqrt(variance);
+  const maxScore = Math.max(...totals);
+  const minScore = Math.min(...totals);
+  const spread = maxScore - minScore;
+
+  const flags: IntegrityFlag[] = [];
+  const hasHighVariance = totals.length <= 3
+    ? spread >= 15
+    : totals.some(t => Math.abs(t - mean) > 2 * stddev && stddev > 0);
+
+  if (hasHighVariance) {
+    for (const score of scores) {
+      const isOutlier = totals.length <= 3
+        ? Math.abs(score.total - mean) >= spread / 2
+        : Math.abs(score.total - mean) > 2 * stddev;
+
+      if (isOutlier) {
+        flags.push({
+          type: 'SCORE_VARIANCE',
+          severity: 'MEDIUM',
+          projectId,
+          judgeId: score.judgeId,
+          details: `Judge score (${score.total}) deviates significantly (spread: ${spread}, mean: ${mean.toFixed(1)}) for project "${projectTitle}"`
+        });
+      }
+    }
+  }
+
+  return flags;
+}
+
 async function checkScoreVariance(eventId: string, flags: IntegrityFlag[]) {
   const projects = await prisma.project.findMany({
     where: { eventId },
@@ -33,24 +81,7 @@ async function checkScoreVariance(eventId: string, flags: IntegrityFlag[]) {
   });
 
   for (const project of projects) {
-    if (project.scores.length < 2) continue;
-
-    const totals = project.scores.map(s => s.total);
-    const mean = totals.reduce((a, b) => a + b, 0) / totals.length;
-    const variance = totals.reduce((sum, t) => sum + (t - mean) ** 2, 0) / totals.length;
-    const stddev = Math.sqrt(variance);
-
-    for (const score of project.scores) {
-      if (Math.abs(score.total - mean) > 2 * stddev && stddev > 0) {
-        flags.push({
-          type: 'SCORE_VARIANCE',
-          severity: 'MEDIUM',
-          projectId: project.id,
-          judgeId: score.judgeId,
-          details: `Judge score (${score.total}) deviates >2σ from mean (${mean.toFixed(1)}, σ=${stddev.toFixed(1)}) for project "${project.title}"`
-        });
-      }
-    }
+    flags.push(...evaluateScoreVariance(project.scores, project.title, project.id));
   }
 }
 

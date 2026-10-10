@@ -173,18 +173,21 @@ export async function getTrackWinners(eventId: string) {
     }
 
     const sorted = Object.values(tally).sort((a, b) => {
+      // ponytail: Primary criterion for track winner is nomination count, tiebreak by stackPoints then totalMarks
+      if (b.count !== a.count) return b.count - a.count;
       if (b.stackPoints !== a.stackPoints) return b.stackPoints - a.stackPoints;
-      if (b.totalMarks !== a.totalMarks) return b.totalMarks - a.totalMarks;
-      return b.count - a.count;
+      return b.totalMarks - a.totalMarks;
     });
+
+    const winner = sorted[0] ? { ...sorted[0], votes: sorted[0].count } : null;
 
     return {
       trackId: track.id,
       trackName: track.name,
       trackColor: track.color,
       totalNominations: track.nominations.length,
-      winner: sorted[0] || null,
-      allNominees: sorted
+      winner,
+      allNominees: sorted.map(nom => ({ ...nom, votes: nom.count }))
     };
   });
 }

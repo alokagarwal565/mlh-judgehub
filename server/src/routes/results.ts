@@ -74,6 +74,16 @@ router.post('/:eventId/results/rejudge', authenticate, requireActiveEvent, requi
     });
     const assignments = [];
     for (const group of tiedGroups) {
+      // ponytail: Prevent duplicate tie-breaker set creation if Set #0 already exists for this group
+      const existingSet = await prisma.judgeSet.findFirst({
+        where: {
+          eventId: req.params.eventId,
+          setNumber: 0,
+          projects: { some: { projectId: { in: group } } }
+        }
+      });
+      if (existingSet) continue;
+
       // Find judges who haven't scored any of these projects
       const projectScores = await prisma.score.findMany({
         where: { projectId: { in: group } },
